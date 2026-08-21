@@ -346,6 +346,7 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                 'id': list_id,
                 'url': list_url,
                 'item_count': 0,
+                'user_id': list_user_id,
                 'error': str(e)
             })
     
@@ -463,16 +464,32 @@ def get_source_lists_from_item(item: Dict[str, Any], list_type: Optional[str] = 
     return source_lists
 
 
-def choose_request_user_id(source_lists: List[Dict[str, Any]], default_user_id: str) -> str:
+def collect_request_user_ids(source_lists: List[Dict[str, Any]], default_user_id: str) -> List[str]:
     """
-    Choose which Overseerr requester user_id to use for this item.
-    Prefers the first source list that has a user_id; falls back to the client's default.
+    Collect every distinct Overseerr user that should request this item.
+
+    An item can appear on lists belonging to different people. Requesting only
+    for the first of them - which is what picking a single requester does -
+    leaves everyone else's list silently unsynced, so return each distinct user
+    in the order their lists were fetched.
+
+    Args:
+        source_lists: The lists this item came from
+        default_user_id: Requester to use for lists with no user assigned
+
+    Returns:
+        List[str]: Distinct user IDs, in first-seen order
     """
+    user_ids = []
     for source in source_lists:
-        user_id = source.get('user_id')
-        if user_id:
-            return str(user_id)
-    return str(default_user_id or "1")
+        user_id = str(source.get('user_id') or default_user_id or "1")
+        if user_id not in user_ids:
+            user_ids.append(user_id)
+
+    if not user_ids:
+        user_ids.append(str(default_user_id or "1"))
+
+    return user_ids
 
 
 def process_media_item(item: Dict[str, Any], overseerr_client: OverseerrClient, dry_run: bool, is_4k: bool = False, list_type: Optional[str] = None, list_id: Optional[str] = None) -> Dict[str, Any]:
@@ -644,10 +661,11 @@ def process_media_item(item: Dict[str, Any], overseerr_client: OverseerrClient, 
                 logging.error(f"❌ CRITICAL: No source lists found for item '{title}'! _source_lists={item.get('_source_lists')}, _source_list_type={item.get('_source_list_type')}, _source_list_id={item.get('_source_list_id')}, list_type={list_type}, list_id={list_id}")
                 # Don't proceed without list information - this will cause items to not be linked to lists
 
-            # Determine which Overseerr user to request as
-            requester_user_id = choose_request_user_id(source_lists, overseerr_client.requester_user_id)
-            logging.info(f"🙋 Using Overseerr user_id {requester_user_id} for '{title}'")
-            
+            # Determine which Overseerr user(s) to request as - an item that
+            # appears on several people's lists needs a request for each of them
+            requester_user_ids = collect_request_user_ids(source_lists, overseerr_client.requester_user_id)
+            logging.info(f"🙋 Requesting '{title}' as Overseerr user(s): {', '.join(requester_user_ids)}")
+
             # Check if we should skip this item based on last sync time
             if not should_sync_item(overseerr_id):
                 logging.info(f"⏭️  SKIP: Recently synced (within skip window)")
@@ -657,56 +675,72 @@ def process_media_item(item: Dict[str, Any], overseerr_client: OverseerrClient, 
                 return {"title": title, "status": "skipped", "year": year, "media_type": media_type}
 
             logging.info(f"🔍 Checking media status in Overseerr...")
-            is_available, is_requested, number_of_seasons = overseerr_client.get_media_status(overseerr_id, search_result["mediaType"])
-            
-            # Log status interpretation for debugging
-            if not is_available and not is_requested:
-                logging.debug(f"Media status: Not available, not requested - will attempt to request")
-            
+            media_state = overseerr_client.get_media_state(overseerr_id, search_result["mediaType"], is_4k)
+            is_available = media_state["is_available"]
+            number_of_seasons = media_state["number_of_seasons"]
+            existing_requesters = media_state["requested_by_user_ids"]
+
             if is_available:
                 logging.info(f"☑️ STATUS: Already available in library")
                 # Save relationship for all source lists
                 for source_list in source_lists:
                     save_sync_result(title, media_type, imdb_id, overseerr_id, "already_available", year, tmdb_id, source_list['type'], source_list['id'])
                 return {"title": title, "status": "already_available", "year": year, "media_type": media_type}
-            elif is_requested:
-                logging.info(f"📌 STATUS: Already requested (pending)")
-                # Save relationship for all source lists
+
+            # Skip the users who already have a request on this item, so a
+            # pending request by one person doesn't block everyone else's list.
+            users_to_request = [u for u in requester_user_ids if u not in existing_requesters]
+
+            if not users_to_request:
+                logging.info(
+                    f"📌 STATUS: Already requested by {', '.join(sorted(existing_requesters & set(requester_user_ids)))}"
+                )
                 for source_list in source_lists:
                     save_sync_result(title, media_type, imdb_id, overseerr_id, "already_requested", year, tmdb_id, source_list['type'], source_list['id'])
                 return {"title": title, "status": "already_requested", "year": year, "media_type": media_type}
-            else:
-                logging.info(f"🚀 STATUS: Requesting media...")
+
+            if existing_requesters:
+                logging.info(
+                    f"➕ Already requested by {', '.join(sorted(existing_requesters))}; "
+                    f"still requesting for {', '.join(users_to_request)}"
+                )
+
+            logging.info(f"🚀 STATUS: Requesting media...")
+            statuses = []
+            for user_id in users_to_request:
                 if search_result["mediaType"] == 'tv':
                     # Check if a specific season is requested
                     if season_number is not None:
-                        logging.info(f"📺 TV SERIES: Requesting Season {season_number} specifically")
-                        request_status = overseerr_client.request_specific_season(overseerr_id, season_number, is_4k, requester_user_id=requester_user_id)
+                        logging.info(f"📺 TV SERIES: Requesting Season {season_number} specifically as user {user_id}")
+                        request_status = overseerr_client.request_specific_season(overseerr_id, season_number, is_4k, requester_user_id=user_id)
                     else:
-                        logging.info(f"📺 TV SERIES: Requesting {number_of_seasons} season(s)")
-                        request_status = overseerr_client.request_tv_series(overseerr_id, number_of_seasons, is_4k, requester_user_id=requester_user_id)
+                        logging.info(f"📺 TV SERIES: Requesting {number_of_seasons} season(s) as user {user_id}")
+                        request_status = overseerr_client.request_tv_series(overseerr_id, number_of_seasons, is_4k, requester_user_id=user_id)
                 else:
-                    logging.info(f"🎬 MOVIE: Submitting request")
-                    request_status = overseerr_client.request_media(overseerr_id, search_result["mediaType"], is_4k, requester_user_id=requester_user_id)
-                
-                if request_status == "success":
+                    logging.info(f"🎬 MOVIE: Submitting request as user {user_id}")
+                    request_status = overseerr_client.request_media(overseerr_id, search_result["mediaType"], is_4k, requester_user_id=user_id)
+                statuses.append(request_status)
+
+            # A request landing for any user counts as a sync; the per-user
+            # failures are already logged with the reason Overseerr gave.
+            if "success" in statuses:
+                failed = statuses.count("error")
+                if failed:
+                    logging.warning(f"⚠️  PARTIAL: Requested for {statuses.count('success')} user(s), {failed} failed")
+                else:
                     logging.info(f"✅ SUCCESS: Request submitted successfully!")
-                    # Save relationship for all source lists
-                    for source_list in source_lists:
-                        save_sync_result(title, media_type, imdb_id, overseerr_id, "requested", year, tmdb_id, source_list['type'], source_list['id'])
-                    return {"title": title, "status": "requested", "year": year, "media_type": media_type}
-                elif request_status == "already_requested":
-                    logging.info(f"📌 STATUS: Already requested (detected from API response)")
-                    # Save relationship for all source lists
-                    for source_list in source_lists:
-                        save_sync_result(title, media_type, imdb_id, overseerr_id, "already_requested", year, tmdb_id, source_list['type'], source_list['id'])
-                    return {"title": title, "status": "already_requested", "year": year, "media_type": media_type}
-                else:
-                    logging.error(f"❌ ERROR: Request failed")
-                    # Save relationship for all source lists
-                    for source_list in source_lists:
-                        save_sync_result(title, media_type, imdb_id, overseerr_id, "request_failed", year, tmdb_id, source_list['type'], source_list['id'])
-                    return {"title": title, "status": "request_failed", "year": year, "media_type": media_type}
+                final_status = "requested"
+            elif "already_requested" in statuses:
+                logging.info(f"📌 STATUS: Already requested (detected from API response)")
+                final_status = "already_requested"
+            else:
+                logging.error(f"❌ ERROR: Request failed for all {len(statuses)} user(s)")
+                final_status = "request_failed"
+
+            # Save relationship for all source lists
+            for source_list in source_lists:
+                save_sync_result(title, media_type, imdb_id, overseerr_id, final_status, year, tmdb_id, source_list['type'], source_list['id'])
+            return {"title": title, "status": final_status, "year": year, "media_type": media_type}
         else:
             logging.error(f"❌ ERROR: Could not find match using any method")
             # Get list information from item using helper function
@@ -739,6 +773,41 @@ def process_media_item(item: Dict[str, Any], overseerr_client: OverseerrClient, 
         return result
 
 
+def verify_list_requesters(synced_lists: List[Dict[str, Any]], overseerr_client: OverseerrClient) -> None:
+    """
+    Check every user the lists in this sync will request as, before processing.
+
+    Without this, a user that Overseerr rejects shows up only as a wall of
+    per-item failures, with nothing naming the list or the user at fault.
+
+    Args:
+        synced_lists: The lists taking part in this sync
+        overseerr_client: Client used to look the users up
+    """
+    users_to_lists: Dict[str, List[str]] = {}
+    for list_info in synced_lists or []:
+        user_id = str(list_info.get('user_id') or overseerr_client.requester_user_id or "1")
+        label = f"{list_info.get('type', '?').upper()}:{list_info.get('id', '?')}"
+        users_to_lists.setdefault(user_id, []).append(label)
+
+    if not users_to_lists:
+        return
+
+    for user_id, list_labels in sorted(users_to_lists.items()):
+        try:
+            usable, reason = overseerr_client.validate_requester(user_id)
+        except Exception as e:
+            logging.warning(f"Could not verify Overseerr user {user_id}: {e}")
+            continue
+
+        lists_desc = ", ".join(list_labels)
+        if usable:
+            logging.info(f"🙋 {reason} — for {lists_desc}")
+        else:
+            logging.error(f"❌ {reason} Affected list(s): {lists_desc}")
+            print(color_gradient(f"\n❌  {reason}\n    Affected list(s): {lists_desc}", "#ff0000", "#aa0000"))
+
+
 def sync_media_to_overseerr(
     media_items: List[Dict[str, Any]],
     overseerr_client: OverseerrClient,
@@ -768,8 +837,11 @@ def sync_media_to_overseerr(
     sync_results.synced_lists = synced_lists or []
     current_item = 0
 
+    if not dry_run:
+        verify_list_requesters(sync_results.synced_lists, overseerr_client)
+
     print(f"\n🎬  Processing {sync_results.total_items} media items...")
-    
+
     # Intelligent batching for optimal performance with readable logs
     batch_size = int(os.getenv('LISTSYNC_BATCH_SIZE', '3') or '3')  # Default batch size of 3
     sequential_mode = os.getenv('LISTSYNC_SEQUENTIAL_MODE', 'false').lower() == 'true'
@@ -1515,42 +1587,32 @@ def sync_single_list(
             print(color_gradient(f"\n{sync_start_marker}", "#00aaff", "#00ffaa"))
             print(color_gradient(f"🎯  Single List Sync: {list_type.upper()}:{list_id}", "#00aaff", "#00ffaa"))
             
-            # Get user_id from database if not provided
+            # Get user_id from database if not provided. The lookup tolerates
+            # ID/URL form differences - an IMDb list stored as a full URL must
+            # still be found when the sync is triggered with the bare list ID,
+            # otherwise it silently falls back to requesting as the admin.
             if user_id is None:
-                from .database import load_list_ids
-                lists = load_list_ids()
-                for list_item in lists:
-                    if list_item['type'] == list_type and list_item['id'] == list_id:
-                        user_id = list_item.get('user_id', '1')
-                        logging.info(f"Using user_id {user_id} from list configuration")
-                        break
-                if user_id is None:
+                from .database import get_list_user_id
+                user_id = get_list_user_id(list_type, list_id)
+                if user_id is not None:
+                    logging.info(f"Using user_id {user_id} from list configuration")
+                else:
                     user_id = '1'  # Default fallback
-                    logging.warning(f"List not found in database, using default user_id: 1")
-            
-            # Validate that the user exists in Overseerr
-            from .database import get_overseerr_user_by_id
-            user_exists = get_overseerr_user_by_id(user_id)
-            if not user_exists:
-                logging.warning(f"User ID {user_id} not found in local user database. This may cause issues if the user doesn't exist in Overseerr.")
-                # Try to fetch from Overseerr directly
-                try:
-                    import requests
-                    users_url = f"{overseerr_url.rstrip('/')}/api/v1/user"
-                    headers = {"X-Api-Key": overseerr_api_key}
-                    response = requests.get(users_url, headers=headers, timeout=10)
-                    if response.status_code == 200:
-                        users_data = response.json()
-                        users = users_data.get('results', [])
-                        user_found = any(str(user.get('id')) == str(user_id) for user in users)
-                        if not user_found:
-                            logging.warning(f"User ID {user_id} not found in Overseerr. Falling back to default user ID 1.")
-                            user_id = '1'
-                except Exception as e:
-                    logging.warning(f"Failed to validate user in Overseerr: {e}. Proceeding with user_id {user_id}")
-            
+                    logging.warning(
+                        f"List {list_type}:{list_id} not found in database, using default user_id: 1"
+                    )
+
             # Create Overseerr client with the appropriate user_id
             overseerr_client = OverseerrClient(overseerr_url, overseerr_api_key, user_id)
+
+            # Check the requester up front so a misconfigured user produces one
+            # clear message instead of a failure on every item in the list.
+            usable, reason = overseerr_client.validate_requester(user_id)
+            if usable:
+                logging.info(f"🙋 {reason}")
+            else:
+                logging.error(f"❌ {reason}")
+                print(color_gradient(f"\n❌  {reason}", "#ff0000", "#aa0000"))
             
             # Create a single list info dictionary (carry user_id so requests use correct requester)
             single_list_info = [{"type": list_type, "id": list_id, "user_id": user_id}]

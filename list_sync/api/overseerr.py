@@ -10,6 +10,14 @@ from urllib.parse import quote
 
 from ..utils.helpers import calculate_title_similarity, custom_input, color_gradient
 
+# Overseerr/Jellyseerr permission bits (server/lib/permissions.ts).
+# ADMIN implies every other permission.
+PERMISSION_ADMIN = 2
+PERMISSION_REQUEST = 32
+PERMISSION_REQUEST_MOVIE = 262144
+PERMISSION_REQUEST_TV = 524288
+
+
 class OverseerrClient:
     """Client for interacting with the Overseerr API."""
     
@@ -27,6 +35,7 @@ class OverseerrClient:
         self.requester_user_id = requester_user_id
         self.headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
         self.request_headers = {"X-Api-Key": api_key, "X-Api-User": requester_user_id, "Content-Type": "application/json"}
+        self._users_cache = None
 
     def _headers_for_user(self, requester_user_id: Optional[str] = None) -> Dict[str, str]:
         """
@@ -38,7 +47,179 @@ class OverseerrClient:
             "X-Api-User": str(user_id),
             "Content-Type": "application/json"
         }
-    
+
+    def _submit_request(self, payload: Dict[str, Any], description: str,
+                        requester_user_id: Optional[str] = None) -> str:
+        """
+        POST a request to Overseerr as a specific user and classify the outcome.
+
+        Overseerr answers with distinct signals that all look like "it didn't
+        work" unless they're read carefully:
+          401 - the X-Api-User ID doesn't exist on the server
+          403 - the user exists but may not request, or has hit their quota
+          409 - this user already has a request for this media
+
+        Args:
+            payload (Dict[str, Any]): Request body to POST
+            description (str): Human-readable description used in log lines
+            requester_user_id (Optional[str]): Overseerr user to request as
+
+        Returns:
+            str: "success", "already_requested", or "error"
+        """
+        user_id = str(requester_user_id or self.requester_user_id or "1")
+        request_url = f"{self.overseerr_url}/api/v1/request"
+
+        try:
+            response = requests.post(
+                request_url,
+                headers=self._headers_for_user(user_id),
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            logging.debug(f"Request successful for {description} as user {user_id}")
+            return "success"
+
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code
+            server_message = self._extract_error_message(e.response)
+
+            # 409 is Overseerr's canonical "already requested" answer.
+            if status_code == 409:
+                logging.info(f"📌 {description}: already requested by user {user_id} ({server_message})")
+                return "already_requested"
+
+            if status_code == 401:
+                logging.error(
+                    f"❌ {description}: Overseerr rejected user_id {user_id} (401). "
+                    f"No user with that ID exists on {self.overseerr_url}. "
+                    f"Check the user assigned to this list against Settings → Users in Overseerr."
+                )
+                return "error"
+
+            if status_code == 403:
+                lowered = server_message.lower()
+                if "quota" in lowered:
+                    logging.error(
+                        f"❌ {description}: user {user_id} has hit their request quota ({server_message}). "
+                        f"Raise or clear the quota in Overseerr under Users → {user_id} → Permissions."
+                    )
+                else:
+                    logging.error(
+                        f"❌ {description}: user {user_id} is not allowed to make this request ({server_message}). "
+                        f"Grant that user the Request permission in Overseerr under Users → {user_id} → Permissions "
+                        f"(4K requests need the separate 4K permission)."
+                    )
+                return "error"
+
+            if status_code == 400:
+                # Older builds answered 400 for duplicates; keep detecting that.
+                if any(phrase in server_message.lower()
+                       for phrase in ["already", "duplicate", "exists"]):
+                    logging.info(f"📌 {description}: already requested (400 response)")
+                    return "already_requested"
+                logging.error(f"❌ {description}: bad request (400) - {server_message}")
+                return "error"
+
+            logging.error(f"❌ {description}: HTTP {status_code} as user {user_id} - {server_message}")
+            return "error"
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"❌ {description}: could not reach Overseerr - {str(e)}")
+            return "error"
+
+    @staticmethod
+    def _extract_error_message(response) -> str:
+        """Pull Overseerr's error message out of a failed response body."""
+        try:
+            data = response.json()
+            if isinstance(data, dict):
+                message = data.get("message")
+                if message:
+                    return str(message)
+        except (ValueError, AttributeError):
+            pass
+        text = getattr(response, "text", "") or ""
+        return text.strip()[:200] or "no detail returned"
+
+    def get_users(self, use_cache: bool = True) -> Optional[list]:
+        """
+        Fetch the users configured on the Overseerr server.
+
+        Args:
+            use_cache (bool): Reuse the list fetched earlier in this run. A sync
+                validates one requester per list, and the user list won't change
+                underneath it.
+
+        Returns:
+            Optional[list]: List of user dicts, or None if the lookup failed
+        """
+        if use_cache and self._users_cache is not None:
+            return self._users_cache
+
+        users_url = f"{self.overseerr_url}/api/v1/user"
+        try:
+            # take=0 is rejected by some builds; ask for a large page instead
+            response = requests.get(
+                users_url,
+                headers=self.headers,
+                params={"take": 200},
+                timeout=15
+            )
+            response.raise_for_status()
+            self._users_cache = response.json().get("results", [])
+            return self._users_cache
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Failed to fetch Overseerr users: {str(e)}")
+            return None
+
+    def validate_requester(self, requester_user_id: str) -> Tuple[bool, str]:
+        """
+        Check up front that a list's assigned user can actually make requests.
+
+        Catching this before a sync turns a run of opaque per-item failures into
+        one clear message naming the user and what's wrong with it.
+
+        Args:
+            requester_user_id (str): Overseerr user ID to validate
+
+        Returns:
+            Tuple[bool, str]: (usable, human-readable explanation)
+        """
+        user_id = str(requester_user_id)
+        users = self.get_users()
+
+        if users is None:
+            # Couldn't reach the user endpoint - don't block the sync over it.
+            return True, f"Could not verify user {user_id} (user lookup failed); continuing anyway"
+
+        match = next((u for u in users if str(u.get("id")) == user_id), None)
+        if not match:
+            known = ", ".join(f"{u.get('id')}={u.get('displayName')}" for u in users[:20]) or "none"
+            return False, (
+                f"Overseerr has no user with ID {user_id}. "
+                f"Known users: {known}"
+            )
+
+        display_name = match.get("displayName") or match.get("username") or f"user {user_id}"
+
+        permissions = match.get("permissions")
+        if isinstance(permissions, int):
+            is_admin = bool(permissions & PERMISSION_ADMIN)
+            can_request = any(
+                permissions & bit
+                for bit in (PERMISSION_REQUEST, PERMISSION_REQUEST_MOVIE, PERMISSION_REQUEST_TV)
+            )
+            if not is_admin and not can_request:
+                return False, (
+                    f"'{display_name}' (ID {user_id}) does not have the Request permission in Overseerr. "
+                    f"Grant it under Users → {display_name} → Permissions."
+                )
+
+        return True, f"Requests will be made as '{display_name}' (ID {user_id})"
+
+
     def test_connection(self):
         """
         Test the connection to the Overseerr API.
@@ -272,16 +453,23 @@ class OverseerrClient:
         logging.warning(f'❌ Overseerr API: No matching results found for "{media_title}" ({release_year}) of type "{media_type}"')
         return None
     
-    def get_media_status(self, media_id: int, media_type: str) -> Tuple[bool, bool, int]:
+    def get_media_state(self, media_id: int, media_type: str, is_4k: bool = False) -> Dict[str, Any]:
         """
-        Get the status of media in Overseerr.
-        
+        Get the full state of a media item in Overseerr, including who requested it.
+
+        The library-wide status alone can't answer "does *this* user already have
+        a request?", which is what per-list users need to know before deciding
+        whether to submit one.
+
         Args:
             media_id (int): Media ID (must be integer, not string)
             media_type (str): Media type (movie or tv)
-            
+            is_4k (bool): Which resolution's requests to count, since Overseerr
+                tracks 4K and non-4K requests separately
+
         Returns:
-            Tuple[bool, bool, int]: Availability, requested status, and number of seasons
+            Dict[str, Any]: is_available, is_requested, number_of_seasons and
+                requested_by_user_ids (a set of user IDs as strings)
         """
         # Ensure media_id is an integer (may be string from API responses)
         try:
@@ -289,51 +477,86 @@ class OverseerrClient:
         except (ValueError, TypeError):
             logging.error(f"Invalid media_id type in get_media_status: {type(media_id)} = {media_id}")
             raise ValueError(f"media_id must be an integer, got {type(media_id)}: {media_id}")
-        
+
         media_url = f"{self.overseerr_url}/api/v1/{media_type}/{media_id}"
-        
+
         try:
-            response = requests.get(media_url, headers=self.headers)
+            response = requests.get(media_url, headers=self.headers, timeout=15)
             response.raise_for_status()
             media_data = response.json()
-            # Log only essential info instead of full response to reduce log size
-            status = media_data.get("mediaInfo", {}).get("status")
-            logging.debug(f"Overseerr {media_type} ID {media_id}: status={status}")
 
-            media_info = media_data.get("mediaInfo", {})
-            status = media_info.get("status") if media_info else None
+            media_info = media_data.get("mediaInfo") or {}
+            status = media_info.get("status")
             number_of_seasons = self.extract_number_of_seasons(media_data)
+            requested_by = self._extract_requester_ids(media_info, is_4k)
 
-            # Handle None status (no mediaInfo - movie not in Overseerr yet)
-            if status is None:
-                logging.debug(f"Status for {media_type} ID {media_id}: None (not in Overseerr database - available to request)")
-                # Not available, not requested - should trigger a request
-                return False, False, number_of_seasons
-
-            logging.debug(f"Status for {media_type} ID {media_id}: {status}")
-            logging.debug(f"Number of seasons for {media_type} ID {media_id}: {number_of_seasons}")
+            logging.debug(
+                f"Overseerr {media_type} ID {media_id}: status={status}, "
+                f"seasons={number_of_seasons}, requested_by={sorted(requested_by) or 'nobody'}"
+            )
 
             # Status codes:
+            # None: not in Overseerr's database yet
             # 0: NOT REQUESTED (available to request)
             # 1: REQUESTED (pending approval)
             # 2: PENDING (approved, waiting for download)
             # 3: PROCESSING (downloading/importing)
             # 4: PARTIALLY_AVAILABLE (some content available)
             # 5: AVAILABLE (fully available)
-            
-            # Status 0 means not requested yet - should trigger a request
-            if status == 0:
-                logging.debug(f"Status 0 for {media_type} ID {media_id}: Not requested yet (available to request)")
-                return False, False, number_of_seasons
-            
-            is_available_to_watch = status in [4, 5]
-            is_requested = status in [1, 2, 3]
+            if status is None or status == 0:
+                return {
+                    "is_available": False,
+                    "is_requested": False,
+                    "number_of_seasons": number_of_seasons,
+                    "requested_by_user_ids": requested_by,
+                }
 
-            return is_available_to_watch, is_requested, number_of_seasons
+            return {
+                "is_available": status in [4, 5],
+                "is_requested": status in [1, 2, 3],
+                "number_of_seasons": number_of_seasons,
+                "requested_by_user_ids": requested_by,
+            }
         except Exception as e:
             logging.error(f"Error confirming status for {media_type} ID {media_id}: {str(e)}")
             raise
-    
+
+    @staticmethod
+    def _extract_requester_ids(media_info: Dict[str, Any], is_4k: bool = False) -> set:
+        """
+        Collect the IDs of users who already have a request on this media.
+
+        Only requests at the resolution being synced count, since Overseerr
+        treats 4K and non-4K as separate requests. A declined request counts
+        too: re-submitting it every sync would fight the admin who declined it.
+        """
+        requester_ids = set()
+        for request in (media_info.get("requests") or []):
+            if not isinstance(request, dict):
+                continue
+            if bool(request.get("is4k", False)) != bool(is_4k):
+                continue
+            requested_by = request.get("requestedBy") or {}
+            user_id = requested_by.get("id") if isinstance(requested_by, dict) else None
+            if user_id is not None:
+                requester_ids.add(str(user_id))
+        return requester_ids
+
+    def get_media_status(self, media_id: int, media_type: str) -> Tuple[bool, bool, int]:
+        """
+        Get the status of media in Overseerr.
+
+        Args:
+            media_id (int): Media ID (must be integer, not string)
+            media_type (str): Media type (movie or tv)
+
+        Returns:
+            Tuple[bool, bool, int]: Availability, requested status, and number of seasons
+        """
+        state = self.get_media_state(media_id, media_type)
+        return state["is_available"], state["is_requested"], state["number_of_seasons"]
+
+
     def extract_number_of_seasons(self, media_data):
         """
         Extract the number of seasons from media data.
@@ -367,39 +590,18 @@ class OverseerrClient:
             logging.error(f"Invalid media_id type: {type(media_id)} = {media_id}")
             return "error"
         
-        request_url = f"{self.overseerr_url}/api/v1/request"
         payload = {
             "mediaId": media_id,  # Ensure it's an integer, not string
             "mediaType": media_type,
             "is4k": is_4k
         }
-        
-        try:
-            response = requests.post(request_url, headers=self._headers_for_user(requester_user_id), json=payload)
-            response.raise_for_status()
-            # Log only success/error instead of full response to reduce log size
-            logging.debug(f"Request successful for {media_type} ID {media_id}")
-            return "success"
-        except requests.exceptions.HTTPError as e:
-            # Handle 400 Bad Request - might mean already requested
-            if e.response.status_code == 400:
-                try:
-                    error_data = e.response.json()
-                    error_message = error_data.get("message", "").lower()
-                    # Check if error indicates already requested
-                    if any(phrase in error_message for phrase in ["already", "duplicate", "exists", "requested"]):
-                        logging.info(f"Media {media_type} ID {media_id} already requested (400 response)")
-                        return "already_requested"
-                except:
-                    pass
-                logging.error(f"Bad request (400) for {media_type} ID {media_id}: {e.response.text}")
-            else:
-                logging.error(f"HTTP error requesting {media_type} ID {media_id}: {e.response.status_code} - {e.response.text}")
-            return "error"
-        except Exception as e:
-            logging.error(f"Error requesting {media_type} ID {media_id}: {str(e)}")
-            return "error"
-    
+
+        return self._submit_request(
+            payload,
+            f"{media_type} ID {media_id}",
+            requester_user_id
+        )
+
     def request_tv_series(self, tv_id: int, number_of_seasons: int, is_4k: bool = False, requester_user_id: Optional[str] = None) -> str:
         """
         Request TV series in Overseerr with specific seasons.
@@ -419,45 +621,24 @@ class OverseerrClient:
             logging.error(f"Invalid tv_id type: {type(tv_id)} = {tv_id}")
             return "error"
         
-        request_url = f"{self.overseerr_url}/api/v1/request"
-        
         seasons_list = [i for i in range(1, number_of_seasons + 1)]
         logging.debug(f"Seasons list for TV series ID {tv_id}: {seasons_list}")
-        
+
         payload = {
             "mediaId": tv_id,  # Ensure it's an integer, not string
             "mediaType": "tv",
             "is4k": is_4k,
             "seasons": seasons_list
         }
-        
+
         logging.debug(f"Requesting TV series ID {tv_id}: {number_of_seasons} seasons")
 
-        try:
-            response = requests.post(request_url, headers=self._headers_for_user(requester_user_id), json=payload)
-            response.raise_for_status()
-            logging.debug(f"TV series request successful for ID {tv_id}")
-            return "success"
-        except requests.exceptions.HTTPError as e:
-            # Handle 400 Bad Request - might mean already requested
-            if e.response.status_code == 400:
-                try:
-                    error_data = e.response.json()
-                    error_message = error_data.get("message", "").lower()
-                    # Check if error indicates already requested
-                    if any(phrase in error_message for phrase in ["already", "duplicate", "exists", "requested"]):
-                        logging.info(f"TV series ID {tv_id} already requested (400 response)")
-                        return "already_requested"
-                except:
-                    pass
-                logging.error(f"Bad request (400) for TV series ID {tv_id}: {e.response.text}")
-            else:
-                logging.error(f"HTTP error requesting TV series ID {tv_id}: {e.response.status_code} - {e.response.text}")
-            return "error"
-        except Exception as e:
-            logging.error(f"Error requesting TV series ID {tv_id}: {str(e)}")
-            return "error"
-    
+        return self._submit_request(
+            payload,
+            f"TV series ID {tv_id} ({number_of_seasons} season(s))",
+            requester_user_id
+        )
+
     def request_specific_season(self, tv_id: int, season_number: int, is_4k: bool = False, requester_user_id: Optional[str] = None) -> str:
         """
         Request a specific season of a TV series in Overseerr.
@@ -477,38 +658,17 @@ class OverseerrClient:
             logging.error(f"Invalid tv_id type: {type(tv_id)} = {tv_id}")
             return "error"
         
-        request_url = f"{self.overseerr_url}/api/v1/request"
-        
         payload = {
             "mediaId": tv_id,  # Ensure it's an integer, not string
             "mediaType": "tv",
             "is4k": is_4k,
             "seasons": [season_number]  # Request only the specific season
         }
-        
+
         logging.info(f"📺 Requesting Season {season_number} for TV series TMDB ID {tv_id}")
 
-        try:
-            response = requests.post(request_url, headers=self._headers_for_user(requester_user_id), json=payload)
-            response.raise_for_status()
-            logging.info(f"✅ Successfully requested Season {season_number} for TV series ID {tv_id}")
-            return "success"
-        except requests.exceptions.HTTPError as e:
-            # Handle 400 Bad Request - might mean already requested
-            if e.response.status_code == 400:
-                try:
-                    error_data = e.response.json()
-                    error_message = error_data.get("message", "").lower()
-                    # Check if error indicates already requested
-                    if any(phrase in error_message for phrase in ["already", "duplicate", "exists", "requested"]):
-                        logging.info(f"Season {season_number} for TV series ID {tv_id} already requested (400 response)")
-                        return "already_requested"
-                except:
-                    pass
-                logging.error(f"Bad request (400) for Season {season_number} TV series ID {tv_id}: {e.response.text}")
-            else:
-                logging.error(f"HTTP error requesting Season {season_number} for TV series ID {tv_id}: {e.response.status_code} - {e.response.text}")
-            return "error"
-        except Exception as e:
-            logging.error(f"❌ Error requesting Season {season_number} for TV series ID {tv_id}: {str(e)}")
-            return "error"
+        return self._submit_request(
+            payload,
+            f"Season {season_number} of TV series ID {tv_id}",
+            requester_user_id
+        )

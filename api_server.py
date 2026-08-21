@@ -41,6 +41,7 @@ from list_sync.database import (
     load_list_ids,
     save_list_id,
     delete_list,
+    update_list_user_id,
     DB_FILE,
     init_database
 )
@@ -128,6 +129,9 @@ class ListAdd(BaseModel):
     list_type: str
     list_id: str
     user_id: str = "1"
+
+class ListUserUpdate(BaseModel):
+    user_id: str
 
 class ProcessInfo(BaseModel):
     pid: int
@@ -3048,7 +3052,8 @@ async def get_lists():
     """Get all configured lists"""
     try:
         lists = load_list_ids()
-        
+        user_names = _overseerr_user_names()
+
         # Add display names and include item counts, last_synced, and user_id with proper timezone conversion
         formatted_lists = []
         for i, list_item in enumerate(lists):
@@ -3113,7 +3118,10 @@ async def get_lists():
                 "display_name": display_name,
                 "item_count": list_item.get('item_count', 0),  # Include item count from database
                 "last_synced": last_synced,  # Include converted last_synced timestamp
-                "user_id": list_item.get('user_id', '1')  # Include user_id for per-list user assignment
+                "user_id": list_item.get('user_id', '1'),  # Include user_id for per-list user assignment
+                # Resolve the name here so the UI can show who a list requests
+                # as even before the users store has loaded
+                "user_display_name": user_names.get(str(list_item.get('user_id', '1'))) or None
             })
         
         return {"lists": formatted_lists}
@@ -3151,17 +3159,103 @@ async def get_lists_debug():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _overseerr_user_names() -> Dict[str, str]:
+    """Map Overseerr user IDs to display names, from the local user cache."""
+    try:
+        from list_sync.database import get_overseerr_users
+        return {
+            str(u.get('id')): (u.get('display_name') or u.get('email') or '')
+            for u in (get_overseerr_users() or [])
+        }
+    except Exception as e:
+        logging.debug(f"Could not load Overseerr user names: {e}")
+        return {}
+
+
+def _describe_overseerr_user(user_id: str) -> Optional[str]:
+    """Look up an Overseerr user's display name from the local user cache."""
+    return _overseerr_user_names().get(str(user_id)) or None
+
+
+def _validate_overseerr_user(user_id: str) -> Optional[str]:
+    """
+    Check a user ID against the known Overseerr users.
+
+    Returns:
+        Optional[str]: An error message if the user is definitely unusable,
+            None if the user is fine or can't be verified right now.
+    """
+    try:
+        from list_sync.database import get_overseerr_users
+        users = get_overseerr_users()
+    except Exception as e:
+        logging.debug(f"Could not verify user {user_id}: {e}")
+        return None
+
+    # An empty cache means users have never been synced - don't block on it.
+    if not users:
+        return None
+
+    if any(str(u.get('id')) == str(user_id) for u in users):
+        return None
+
+    known = ", ".join(f"{u.get('id')} ({u.get('display_name')})" for u in users[:20])
+    return (
+        f"Overseerr user ID {user_id} does not exist. Known users: {known}. "
+        f"Re-sync users from Settings if this looks out of date."
+    )
+
+
+@app.patch("/api/lists/{list_type}/{list_id:path}/user")
+async def update_list_user_endpoint(list_type: str, list_id: str, payload: ListUserUpdate):
+    """Change which Overseerr user a list requests as - uses :path for full URLs"""
+    try:
+        user_id = str(payload.user_id).strip()
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required")
+
+        validation_error = _validate_overseerr_user(user_id)
+        if validation_error:
+            raise HTTPException(status_code=400, detail=validation_error)
+
+        if not update_list_user_id(list_type, list_id, user_id):
+            raise HTTPException(
+                status_code=404,
+                detail=f"No {list_type} list found matching '{list_id}'"
+            )
+
+        display_name = _describe_overseerr_user(user_id)
+        return {
+            "success": True,
+            "list_type": list_type,
+            "list_id": list_id,
+            "user_id": user_id,
+            "user_display_name": display_name,
+            "message": f"{list_type} list now requests as {display_name or f'user {user_id}'}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/lists")
 async def add_list(list_add: ListAdd):
     """Add new list with URL generation and auto-detection of special Trakt lists"""
     try:
         # Import the construct_list_url function
         from list_sync.utils.helpers import construct_list_url
-        
+
         list_type = list_add.list_type
         list_id = list_add.list_id
-        user_id = list_add.user_id
-        
+        user_id = str(list_add.user_id).strip() or "1"
+
+        # Catch a bad requester here rather than at sync time, when it would
+        # surface as a failure on every item in the list.
+        validation_error = _validate_overseerr_user(user_id)
+        if validation_error:
+            raise HTTPException(status_code=400, detail=validation_error)
+
         # Auto-detect special Trakt lists (trending:movies, popular:shows, etc.)
         if list_type == "trakt" and ':' in list_id:
             parts = list_id.split(':')
@@ -3182,8 +3276,11 @@ async def add_list(list_add: ListAdd):
             "message": f"Added {list_type} list: {list_id}",
             "list_url": list_url,
             "item_count": 0,
-            "user_id": user_id
+            "user_id": user_id,
+            "user_display_name": _describe_overseerr_user(user_id)
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

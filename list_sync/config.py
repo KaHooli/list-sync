@@ -299,19 +299,57 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
         
         return None, None, None, 0.0, False, False
 
+# Separator between a list ID and the Overseerr user it should request as, in
+# the *_LISTS environment variables. Two colons, because a single colon already
+# means something in Trakt special lists ("trending:movies") and appears in URLs.
+LIST_USER_SEPARATOR = "::"
+
+
+def parse_list_entry(raw_entry: str) -> Tuple[str, Optional[str]]:
+    """
+    Split one entry of a *_LISTS environment variable into list ID and user.
+
+    Entries are either a bare list ID ("ls123456789") or a list ID with the
+    Overseerr user that should request its items ("ls123456789::7").
+
+    Args:
+        raw_entry (str): One comma-separated entry from a *_LISTS variable
+
+    Returns:
+        Tuple[str, Optional[str]]: (list ID, user ID or None if unspecified)
+    """
+    entry = (raw_entry or "").strip()
+    if not entry:
+        return "", None
+
+    if LIST_USER_SEPARATOR not in entry:
+        return entry, None
+
+    list_part, _, user_part = entry.rpartition(LIST_USER_SEPARATOR)
+    list_part = list_part.strip()
+    user_part = user_part.strip()
+
+    # Only treat the tail as a user if it actually looks like a user ID,
+    # so a stray "::" in a URL doesn't silently truncate the list.
+    if list_part and user_part.isdigit():
+        return list_part, user_part
+
+    return entry, None
+
+
 def load_env_lists() -> bool:
     """
     Load lists from database configuration or environment variables and add them to the database.
     Only adds new lists that don't already exist - preserves existing lists.
-    
+
     Returns:
         bool: True if any new lists were added, False otherwise
     """
-    from .database import save_list_id, load_list_ids, DB_FILE
+    from .database import save_list_id, load_list_ids, normalize_list_id, DB_FILE
     import logging
-    
+
     lists_added = False
-    
+
     try:
         # Try to use ConfigManager for settings
         try:
@@ -320,76 +358,94 @@ def load_env_lists() -> bool:
         except:
             # Fallback to environment if ConfigManager fails
             get_list_setting = lambda key: os.getenv(key.upper(), '')
-        
+
         # Get existing lists from database to avoid duplicates
         existing_lists = load_list_ids()
-        existing_set = {(list_info['type'], list_info['id']) for list_info in existing_lists}
-        
+        # Match on canonical IDs so a list stored as a URL isn't re-added as a
+        # bare ID (and vice versa), which would duplicate it under user 1.
+        existing_set = {
+            (list_info['type'], normalize_list_id(list_info['type'], list_info['id']))
+            for list_info in existing_lists
+        }
+
+        # Lists added from the environment request as the globally configured
+        # user unless the entry names one, rather than always the admin account.
+        default_user_id = str(get_list_setting('overseerr_user_id') or '').strip() or None
+
         logging.info(f"Found {len(existing_lists)} existing lists in database")
-        
+
         # Helper function to add list if it doesn't exist
-        def add_list_if_new(list_id: str, list_type: str):
+        def add_list_if_new(list_id: str, list_type: str, user_id: Optional[str] = None):
             nonlocal lists_added
-            if (list_type, list_id) not in existing_set:
-                save_list_id(list_id, list_type)
+            requester = user_id or default_user_id
+            if (list_type, normalize_list_id(list_type, list_id)) not in existing_set:
+                save_list_id(list_id, list_type, user_id=requester)
                 lists_added = True
-                logging.info(f"Added new {list_type.upper()} list: {list_id}")
-                print(f"✅ Added new {list_type.upper()} list: {list_id}")
+                as_user = f" (requests as user {requester})" if requester else ""
+                logging.info(f"Added new {list_type.upper()} list: {list_id}{as_user}")
+                print(f"✅ Added new {list_type.upper()} list: {list_id}{as_user}")
+            elif user_id:
+                # The entry names a user explicitly, so keep the stored list in
+                # step with the configuration file it came from.
+                from .database import get_list_user_id, update_list_user_id
+                current = get_list_user_id(list_type, list_id)
+                if current != str(user_id):
+                    update_list_user_id(list_type, list_id, user_id)
+                    print(f"🔄 {list_type.upper()} list {list_id} now requests as user {user_id}")
             else:
                 logging.info(f"Skipping existing {list_type.upper()} list: {list_id}")
-        
+
+        def add_lists_from_setting(setting_value: str, list_type: str):
+            """Add every comma-separated entry of a *_LISTS setting."""
+            for raw_entry in setting_value.split(','):
+                list_id, user_id = parse_list_entry(raw_entry)
+                if list_id:
+                    add_list_if_new(list_id, list_type, user_id)
+
         # Process IMDB lists
         if imdb_lists := get_list_setting('imdb_lists'):
-            for list_id in imdb_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "imdb")
-        
+            add_lists_from_setting(imdb_lists, "imdb")
+
         # Process Trakt lists
         if trakt_lists := get_list_setting('trakt_lists'):
-            for list_id in trakt_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "trakt")
-                    
+            add_lists_from_setting(trakt_lists, "trakt")
+
         # Process special Trakt lists
         if trakt_special_lists := get_list_setting('trakt_special_lists'):
-            for list_id in trakt_special_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "trakt_special")
-                    if (("trakt_special", list_id.strip()) not in existing_set):
+            for raw_entry in trakt_special_lists.split(','):
+                list_id, user_id = parse_list_entry(raw_entry)
+                if list_id:
+                    is_new = ("trakt_special", normalize_list_id("trakt_special", list_id)) not in existing_set
+                    add_list_if_new(list_id, "trakt_special", user_id)
+                    if is_new:
                         trakt_limit = get_list_setting('trakt_special_items_limit') or '20'
                         logging.info(f"Special Trakt list configured with max {trakt_limit} items")
-        
+
         # Process Letterboxd lists
         if letterboxd_lists := get_list_setting('letterboxd_lists'):
-            for list_id in letterboxd_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "letterboxd")
-        
+            add_lists_from_setting(letterboxd_lists, "letterboxd")
+
         # Process AniList lists
         if anilist_lists := get_list_setting('anilist_lists'):
-            for list_id in anilist_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "anilist")
-        
+            add_lists_from_setting(anilist_lists, "anilist")
+
         # Process MDBList lists
         if mdblist_lists := get_list_setting('mdblist_lists'):
-            for list_id in mdblist_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "mdblist")
-        
+            add_lists_from_setting(mdblist_lists, "mdblist")
+
         # Process Steven Lu lists
         if stevenlu_lists := get_list_setting('stevenlu_lists'):
             if 'stevenlu' in stevenlu_lists.lower():
-                add_list_if_new("stevenlu", "stevenlu")
-                if (("stevenlu", "stevenlu") not in existing_set):
+                _, stevenlu_user = parse_list_entry(stevenlu_lists)
+                is_new = ("stevenlu", normalize_list_id("stevenlu", "stevenlu")) not in existing_set
+                add_list_if_new("stevenlu", "stevenlu", stevenlu_user)
+                if is_new:
                     logging.info("Steven Lu popular movies list configured")
-        
+
         # Process TMDB lists
         if tmdb_lists := get_list_setting('tmdb_lists'):
-            for list_id in tmdb_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "tmdb")
-        
+            add_lists_from_setting(tmdb_lists, "tmdb")
+
         # Process Simkl lists (API-only, requires authentication)
         simkl_client_id = get_list_setting('simkl_client_id')
         simkl_user_token = get_list_setting('simkl_user_token')
@@ -405,9 +461,7 @@ def load_env_lists() -> bool:
         # Only process SIMKL if both credentials are provided
         if simkl_client_id and simkl_user_token:
             if simkl_lists:
-                for list_id in simkl_lists.split(','):
-                    if list_id.strip():
-                        add_list_if_new(list_id.strip(), "simkl")
+                add_lists_from_setting(simkl_lists, "simkl")
             else:
                 # Default to authenticated user watchlist if no specific lists provided
                 add_list_if_new("user_watchlist", "simkl")
@@ -417,10 +471,8 @@ def load_env_lists() -> bool:
         
         # Process TVDB lists
         if tvdb_lists := get_list_setting('tvdb_lists'):
-            for list_id in tvdb_lists.split(','):
-                if list_id.strip():
-                    add_list_if_new(list_id.strip(), "tvdb")
-        
+            add_lists_from_setting(tvdb_lists, "tvdb")
+
         if lists_added:
             logging.info(f"Environment sync complete: {len([l for l in existing_lists])} existing + {sum(1 for _ in [True for _ in range(len(load_list_ids()) - len(existing_lists))])} new lists")
             print(f"📊 Environment sync complete: preserved {len(existing_lists)} existing lists, added new lists")

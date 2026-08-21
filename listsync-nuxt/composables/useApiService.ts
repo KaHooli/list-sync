@@ -96,6 +96,13 @@ export function useApiService() {
       })
     },
 
+    async updateListUser(listType: string, listId: string, userId: string) {
+      return apiCall(`${baseURL}/lists/${listType}/${encodeURIComponent(listId)}/user`, {
+        method: 'PATCH',
+        body: { user_id: userId },
+      })
+    },
+
     async validateList(url: string) {
       return apiCall(`${baseURL}/lists/validate`, {
         method: 'POST',

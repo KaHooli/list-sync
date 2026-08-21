@@ -200,6 +200,44 @@ export const useListsStore = defineStore('lists', {
     },
 
     /**
+     * Change which Overseerr user a list requests as
+     */
+    async updateListUser(listType: string, listId: string, userId: string) {
+      this.error = null
+
+      const list = this.lists.find(
+        (l) => l.list_type === listType && l.list_id === listId
+      )
+      const previousUserId = list?.user_id
+      const previousUserName = list?.user_display_name
+
+      // Update optimistically so the badge reacts immediately, and roll back
+      // if the server rejects the change.
+      if (list) {
+        list.user_id = userId
+        list.user_display_name = null
+      }
+
+      try {
+        const response: any = await useApiService().updateListUser(listType, listId, userId)
+
+        if (list) {
+          list.user_display_name = response?.user_display_name ?? null
+        }
+
+        return { success: true }
+      } catch (err: any) {
+        if (list) {
+          list.user_id = previousUserId
+          list.user_display_name = previousUserName
+        }
+        this.error = err.message || 'Failed to change the list user'
+        console.error('Error updating list user:', err)
+        throw err
+      }
+    },
+
+    /**
      * Sync a specific list
      */
     async syncList(listType: string, listId: string) {
