@@ -549,7 +549,19 @@ def _process_imdb_list(sb, url) -> List[Dict[str, Any]]:
             expected_pages = None
     
     current_page = 1
-    
+
+    # Track what we've already collected so a page that doesn't actually
+    # advance can be detected. IMDb watchlists paginate by infinite scroll and
+    # ignore ?page=N, so the fallback navigation below re-serves the same page
+    # forever; without this the loop never terminates and re-adds the same
+    # titles on every pass.
+    seen_imdb_ids = set()
+
+    # Absolute ceiling, in case a list paginates in some way that defeats both
+    # the expected-page count and the no-progress check. At 250 items per page
+    # this still allows lists far larger than IMDb permits.
+    MAX_PAGES = 200
+
     # Process items on the page
     while True:
         # Check for cancellation at the start of each page
@@ -587,11 +599,14 @@ def _process_imdb_list(sb, url) -> List[Dict[str, Any]]:
                 logging.warning(f"Could not find items via parent: {str(e)}")
         
         logging.info(f"Processing page {current_page}: Found {len(items)} items")
-        
+
+        # Baseline for the no-progress check after this page is parsed
+        items_before_page = len(media_items)
+
         if not items:
             logging.warning("No items found on this page, attempting to continue to next page")
             # We might need to try the next page
-            if current_page < (expected_pages or 2):  # Try at least page 2 if we don't know expected pages
+            if current_page < min(expected_pages or 2, MAX_PAGES):  # Try at least page 2 if we don't know expected pages
                 # Try to navigate to next page directly
                 next_page = current_page + 1
                 next_url = f"{url}/?page={next_page}"
@@ -716,6 +731,12 @@ def _process_imdb_list(sb, url) -> List[Dict[str, Any]]:
                     logging.warning(f"Could not find IMDb ID for {title}, skipping")
                     continue
                 
+                if imdb_id in seen_imdb_ids:
+                    # Already collected on an earlier page - the list re-served
+                    # content we've seen rather than advancing.
+                    continue
+
+                seen_imdb_ids.add(imdb_id)
                 media_items.append({
                     "title": title.strip(),
                     "imdb_id": imdb_id,
@@ -723,16 +744,36 @@ def _process_imdb_list(sb, url) -> List[Dict[str, Any]]:
                     "year": year
                 })
                 logging.info(f"Added {media_type}: {title} ({year}) (IMDB ID: {imdb_id})")
-                
+
             except Exception as e:
                 logging.warning(f"Failed to parse IMDb item: {str(e)}")
                 continue
-        
+
+        # If a page contributed nothing new, pagination isn't advancing. This
+        # is the only stop condition that works when the total-item count
+        # couldn't be parsed, which is the normal case for watchlists.
+        new_this_page = len(media_items) - items_before_page
+        if new_this_page == 0:
+            logging.info(
+                f"Page {current_page} added no new titles ({len(items)} item(s) all seen before) - "
+                f"pagination is not advancing, stopping with {len(media_items)} item(s)"
+            )
+            break
+
+        logging.info(f"Page {current_page} added {new_this_page} new title(s), {len(media_items)} total")
+
         # Check if we've processed all expected pages
         if expected_pages and current_page >= expected_pages:
             logging.info(f"Reached final page {current_page} of {expected_pages}")
             break
-        
+
+        if current_page >= MAX_PAGES:
+            logging.warning(
+                f"Stopping at the {MAX_PAGES}-page safety limit with {len(media_items)} item(s). "
+                f"If this list really is larger, raise MAX_PAGES in the IMDb provider."
+            )
+            break
+
         # Try to navigate to next page
         try:
             # First try clicking the button using a more specific selector
