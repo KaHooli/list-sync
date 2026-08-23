@@ -294,6 +294,68 @@ def fetch_imdb_list_via_http(url: str) -> Optional[List[Dict[str, Any]]]:
     return items
 
 
+def _count_rendered_items(sb) -> int:
+    """How many list rows are currently in the DOM."""
+    for selector in ("li.ipc-metadata-list-summary-item", ".ipc-metadata-list-summary-item"):
+        try:
+            found = sb.find_elements("css selector", selector)
+            if found:
+                return len(found)
+        except Exception:
+            continue
+    return 0
+
+
+def _scroll_for_more_items(sb, current_count: int, max_scrolls: int = 40) -> bool:
+    """
+    Scroll an infinite-scroll IMDb list until more rows appear.
+
+    IMDb watchlists and personal lists render a first batch and load the rest
+    as you reach the bottom. `?page=N` does nothing on those pages, so scrolling
+    is the only way to see the whole list.
+
+    Args:
+        sb: SeleniumBase instance
+        current_count (int): Rows already rendered before scrolling
+        max_scrolls (int): Give up after this many attempts, so a list that
+            stops responding can't spin forever
+
+    Returns:
+        bool: True if new rows appeared, False if the list is fully loaded
+    """
+    stalled = 0
+
+    for attempt in range(max_scrolls):
+        check_and_raise_if_cancelled()
+
+        try:
+            sb.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        except Exception as e:
+            logging.warning(f"Could not scroll IMDb list: {e}")
+            return False
+
+        sb.sleep(2)
+
+        new_count = _count_rendered_items(sb)
+        if new_count > current_count:
+            logging.info(f"Scrolled: {current_count} -> {new_count} rows rendered")
+            return True
+
+        # Nothing new yet. Give the lazy load a couple of chances before
+        # concluding we're at the end, since it fetches asynchronously.
+        stalled += 1
+        if stalled >= 3:
+            return False
+
+        sb.sleep(2)
+
+    logging.warning(
+        f"Stopped scrolling after {max_scrolls} attempts with {current_count} rows - "
+        f"the list may be longer than what was collected"
+    )
+    return False
+
+
 def _resolve_imdb_url(list_id: str):
     """
     Turn a list ID, chart name or URL into a full IMDb URL.
@@ -1124,15 +1186,24 @@ def _process_imdb_list(sb, url) -> List[Dict[str, Any]]:
                         sb.wait_for_element_present('[data-testid="list-page-mc-list-content"]', timeout=10)
                         sb.sleep(3)
             except Exception as e:
-                logging.info(f"Could not click next button: {str(e)}")
-                # Fall back to direct URL navigation
-                next_page = current_page + 1
-                next_url = f"{url}/?page={next_page}"
-                logging.info(f"Attempting to navigate directly to page {next_page}: {next_url}")
-                sb.open(next_url)
-                sb.wait_for_element_present('[data-testid="list-page-mc-list-content"]', timeout=10)
-                sb.sleep(3)
-            
+                # No pagination widget. Watchlists and personal lists load more
+                # by infinite scroll, so `?page=N` is simply ignored and returns
+                # the same content - scroll to pull the next batch instead.
+                logging.info(f"No pagination control ({str(e).splitlines()[0][:80]}); scrolling for more")
+                if not _scroll_for_more_items(sb, len(items)):
+                    # Scrolling did nothing. Older list pages did honour
+                    # ?page=N, so try that once before concluding we're done;
+                    # if it returns the same titles the no-new-items check
+                    # below ends the loop on the next pass.
+                    next_url = f"{url.rstrip('/')}/?page={current_page + 1}"
+                    logging.info(f"Scrolling loaded nothing; trying {next_url}")
+                    try:
+                        sb.open(next_url)
+                        sb.sleep(3)
+                    except Exception as nav_error:
+                        logging.info(f"Could not navigate to {next_url}: {nav_error}")
+                        break
+
             current_page += 1
             sb.sleep(2)
         except Exception as e:
