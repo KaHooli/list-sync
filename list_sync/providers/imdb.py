@@ -30,6 +30,11 @@ _BROWSER_HEADERS = {
 _IMDB_ID_RE = re.compile(r"^tt\d{7,9}$")
 _IMDB_ID_ANYWHERE_RE = re.compile(rb"tt\d{7,9}")
 
+# IMDb sits behind AWS WAF, which answers unrecognised clients with a
+# JavaScript challenge rather than the page. Naming it in the log saves the
+# next person working out why a perfectly good HTTP request returns 2KB.
+_AWS_WAF_RE = re.compile(rb"awswaf|AwsWafIntegration|gokuProps", re.IGNORECASE)
+
 # Keys IMDb has used for a title's ID, its display title, and its year. Several
 # are checked because the exact shape changes between page rewrites; the walker
 # below doesn't depend on where in the tree these appear.
@@ -76,11 +81,20 @@ def _http_get(url: str, timeout: int = 30) -> Optional[bytes]:
             # A 2xx that is too small to be a list page is the bot check.
             if response.status != 200 or len(raw) < _INTERSTITIAL_MAX_BYTES:
                 if not _IMDB_ID_ANYWHERE_RE.search(raw or b""):
-                    logging.info(
-                        f"IMDb answered the direct fetch with HTTP {response.status} and "
-                        f"{len(raw)} bytes containing no titles - this is its bot check, "
-                        f"not the list. Using the browser instead."
-                    )
+                    if _AWS_WAF_RE.search(raw or b""):
+                        logging.info(
+                            f"IMDb served an AWS WAF JavaScript challenge (HTTP "
+                            f"{response.status}, {len(raw)} bytes) instead of the list. "
+                            f"Solving it requires executing challenge.js to obtain an "
+                            f"aws-waf-token, so a real browser is needed - falling back "
+                            f"to Selenium. Swapping the TLS fingerprint does not help."
+                        )
+                    else:
+                        logging.info(
+                            f"IMDb answered the direct fetch with HTTP {response.status} and "
+                            f"{len(raw)} bytes containing no titles - this is its bot check, "
+                            f"not the list. Using the browser instead."
+                        )
                     return None
 
             return raw
