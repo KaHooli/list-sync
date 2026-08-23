@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import re
+import time
 import urllib.error
 import urllib.request
 import zlib
@@ -42,6 +43,20 @@ _TV_TITLE_TYPES = {
 }
 
 
+# IMDb answers plain HTTP clients with a small bot-check interstitial rather
+# than the list. Once that's been seen, back off for a while: retrying wastes a
+# request per list and puts avoidable bot-detection pressure on the same IP the
+# browser fetch is about to use. Time-boxed rather than permanent so a
+# long-lived process picks it up again if IMDb's behaviour changes, without
+# needing a restart.
+_DIRECT_FETCH_BLOCKED_UNTIL = 0.0
+_DIRECT_FETCH_BACKOFF_SECONDS = 30 * 60
+
+# An interstitial is short and carries no titles; a real list page is far
+# larger. Used only to label the log line, never to decide correctness.
+_INTERSTITIAL_MAX_BYTES = 20_000
+
+
 def _http_get(url: str, timeout: int = 30) -> Optional[bytes]:
     """
     Fetch a URL with a browser-like User-Agent, returning None on any failure.
@@ -57,6 +72,17 @@ def _http_get(url: str, timeout: int = 30) -> Optional[bytes]:
                 raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
             elif encoding == "deflate":
                 raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+
+            # A 2xx that is too small to be a list page is the bot check.
+            if response.status != 200 or len(raw) < _INTERSTITIAL_MAX_BYTES:
+                if not _IMDB_ID_ANYWHERE_RE.search(raw or b""):
+                    logging.info(
+                        f"IMDb answered the direct fetch with HTTP {response.status} and "
+                        f"{len(raw)} bytes containing no titles - this is its bot check, "
+                        f"not the list. Using the browser instead."
+                    )
+                    return None
+
             return raw
     except urllib.error.HTTPError as e:
         logging.info(f"IMDb direct fetch returned HTTP {e.code} for {url}")
@@ -225,13 +251,25 @@ def fetch_imdb_list_via_http(url: str) -> Optional[List[Dict[str, Any]]]:
         Optional[List[Dict[str, Any]]]: Media items, or None if this route
             didn't work and the caller should fall back to Selenium.
     """
+    global _DIRECT_FETCH_BLOCKED_UNTIL
+
+    now = time.monotonic()
+    if now < _DIRECT_FETCH_BLOCKED_UNTIL:
+        logging.debug(
+            f"Skipping IMDb direct fetch - backing off for another "
+            f"{int(_DIRECT_FETCH_BLOCKED_UNTIL - now)}s"
+        )
+        return None
+
     logging.info(f"Trying IMDb direct fetch (no browser): {url}")
     html = _http_get(url)
     if not html:
+        _DIRECT_FETCH_BLOCKED_UNTIL = now + _DIRECT_FETCH_BACKOFF_SECONDS
         return None
 
     items = _extract_titles_from_html(html)
     if not items:
+        _DIRECT_FETCH_BLOCKED_UNTIL = now + _DIRECT_FETCH_BACKOFF_SECONDS
         return None
 
     with_titles = sum(1 for i in items if i.get("title"))
