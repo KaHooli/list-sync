@@ -2,13 +2,275 @@
 IMDb list provider for ListSync.
 """
 
+import gzip
+import io
+import json
 import logging
 import re
-from typing import List, Dict, Any
+import urllib.error
+import urllib.request
+import zlib
+from typing import List, Dict, Any, Optional
 
 from seleniumbase import SB
 
 from . import register_provider, check_and_raise_if_cancelled, SyncCancelledException
+
+# IMDb renders lists client-side but ships the whole list as JSON in the initial
+# HTML response. Reading that is one HTTP request with no browser, no CSS
+# selectors and no pagination, so it's tried before falling back to Selenium.
+_BROWSER_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+_IMDB_ID_RE = re.compile(r"^tt\d{7,9}$")
+_IMDB_ID_ANYWHERE_RE = re.compile(rb"tt\d{7,9}")
+
+# Keys IMDb has used for a title's ID, its display title, and its year. Several
+# are checked because the exact shape changes between page rewrites; the walker
+# below doesn't depend on where in the tree these appear.
+_ID_KEYS = ("id", "const", "titleId", "tconst")
+_TITLE_KEYS = ("titleText", "originalTitleText", "primaryTitle", "title", "text", "name")
+_YEAR_KEYS = ("releaseYear", "year", "startYear")
+
+# IMDb title types that are episodic
+_TV_TITLE_TYPES = {
+    "tvseries", "tvminiseries", "tvepisode", "tvspecial", "tvshort",
+}
+
+
+def _http_get(url: str, timeout: int = 30) -> Optional[bytes]:
+    """
+    Fetch a URL with a browser-like User-Agent, returning None on any failure.
+
+    Any problem here is non-fatal: the caller falls back to the browser path.
+    """
+    request = urllib.request.Request(url, headers=_BROWSER_HEADERS)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read()
+            encoding = (response.headers.get("Content-Encoding") or "").lower()
+            if encoding == "gzip":
+                raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
+            elif encoding == "deflate":
+                raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+            return raw
+    except urllib.error.HTTPError as e:
+        logging.info(f"IMDb direct fetch returned HTTP {e.code} for {url}")
+        return None
+    except Exception as e:
+        logging.info(f"IMDb direct fetch failed for {url}: {type(e).__name__}: {e}")
+        return None
+
+
+def _first_string(node: Any, keys) -> Optional[str]:
+    """
+    Read the first usable string from a node, following IMDb's habit of
+    wrapping display text one level down (e.g. {"titleText": {"text": "..."}}).
+    """
+    if not isinstance(node, dict):
+        return None
+    for key in keys:
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            for inner in ("text", "value", "title"):
+                nested = value.get(inner)
+                if isinstance(nested, str) and nested.strip():
+                    return nested.strip()
+    return None
+
+
+def _first_year(node: Any) -> Optional[int]:
+    """Read a release year from a node, unwrapping IMDb's nested shapes."""
+    if not isinstance(node, dict):
+        return None
+    for key in _YEAR_KEYS:
+        value = node.get(key)
+        if isinstance(value, int) and 1800 < value < 2200:
+            return value
+        if isinstance(value, str) and value[:4].isdigit():
+            return int(value[:4])
+        if isinstance(value, dict):
+            for inner in ("year", "text", "value"):
+                nested = value.get(inner)
+                if isinstance(nested, int) and 1800 < nested < 2200:
+                    return nested
+                if isinstance(nested, str) and nested[:4].isdigit():
+                    return int(nested[:4])
+    return None
+
+
+def _media_type_from_node(node: Any) -> str:
+    """Classify a title node as tv or movie, defaulting to movie."""
+    if isinstance(node, dict):
+        title_type = node.get("titleType")
+        raw = None
+        if isinstance(title_type, str):
+            raw = title_type
+        elif isinstance(title_type, dict):
+            raw = title_type.get("id") or title_type.get("text")
+            if title_type.get("isSeries") is True:
+                return "tv"
+        if isinstance(raw, str) and raw.replace(" ", "").replace("_", "").lower() in _TV_TITLE_TYPES:
+            return "tv"
+    return "movie"
+
+
+def _walk_for_titles(node: Any, found: Dict[str, Dict[str, Any]], depth: int = 0) -> None:
+    """
+    Walk arbitrary JSON collecting every title that carries an IMDb ID.
+
+    Deliberately schema-agnostic: IMDb reshuffles where the list lives between
+    page rewrites, and pinning the path is what makes scrapers brittle. Anything
+    shaped like a title is collected wherever it sits in the tree.
+    """
+    if depth > 30:
+        return
+
+    if isinstance(node, list):
+        for child in node:
+            _walk_for_titles(child, found, depth + 1)
+        return
+
+    if not isinstance(node, dict):
+        return
+
+    # Does this node identify a title?
+    imdb_id = None
+    for key in _ID_KEYS:
+        value = node.get(key)
+        if isinstance(value, str) and _IMDB_ID_RE.match(value):
+            imdb_id = value
+            break
+
+    if imdb_id:
+        title = _first_string(node, _TITLE_KEYS)
+        year = _first_year(node)
+        media_type = _media_type_from_node(node)
+
+        existing = found.get(imdb_id)
+        # Keep the richest record seen for a given ID - the same title can
+        # appear both as a bare reference and as a full node.
+        if existing is None or (title and not existing.get("title")):
+            found[imdb_id] = {
+                "title": title,
+                "imdb_id": imdb_id,
+                "media_type": media_type,
+                "year": year,
+            }
+        elif existing and year and not existing.get("year"):
+            existing["year"] = year
+
+    for child in node.values():
+        _walk_for_titles(child, found, depth + 1)
+
+
+def _extract_titles_from_html(html: bytes) -> List[Dict[str, Any]]:
+    """
+    Pull every title out of the JSON IMDb embeds in a list page.
+
+    Returns [] when nothing usable is found, which tells the caller to fall
+    back to the browser.
+    """
+    if not html:
+        return []
+
+    found: Dict[str, Dict[str, Any]] = {}
+
+    blocks = []
+    match = re.search(rb'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+    if match:
+        blocks.append(match.group(1))
+    blocks.extend(re.findall(rb'<script[^>]+type="application/json"[^>]*>(.*?)</script>', html, re.DOTALL))
+    match = re.search(rb'IMDbReactInitialState[^=]*=\s*(\{.*?\});\s*</script>', html, re.DOTALL)
+    if match:
+        blocks.append(match.group(1))
+
+    for block in blocks:
+        try:
+            data = json.loads(block.decode("utf-8", "replace"))
+        except (ValueError, AttributeError):
+            continue
+        _walk_for_titles(data, found)
+
+    if found:
+        return list(found.values())
+
+    # Nothing parsed. If the raw HTML nonetheless carries many title IDs the
+    # data is there in a shape this doesn't understand - say so loudly rather
+    # than silently falling back, because that's a cheap fix worth making.
+    raw_ids = {m.decode() for m in _IMDB_ID_ANYWHERE_RE.findall(html)}
+    if len(raw_ids) > 5:
+        logging.warning(
+            f"IMDb page contains {len(raw_ids)} title IDs but none were in a recognised "
+            f"JSON block - the embedded format has changed. Falling back to the browser."
+        )
+
+    return []
+
+
+def fetch_imdb_list_via_http(url: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Try to read an IMDb list with a single HTTP request and no browser.
+
+    Args:
+        url (str): Full IMDb list, watchlist or chart URL
+
+    Returns:
+        Optional[List[Dict[str, Any]]]: Media items, or None if this route
+            didn't work and the caller should fall back to Selenium.
+    """
+    logging.info(f"Trying IMDb direct fetch (no browser): {url}")
+    html = _http_get(url)
+    if not html:
+        return None
+
+    items = _extract_titles_from_html(html)
+    if not items:
+        return None
+
+    with_titles = sum(1 for i in items if i.get("title"))
+    logging.info(
+        f"IMDb direct fetch recovered {len(items)} title(s) "
+        f"({with_titles} with a display title) - no browser needed"
+    )
+    return items
+
+
+def _resolve_imdb_url(list_id: str):
+    """
+    Turn a list ID, chart name or URL into a full IMDb URL.
+
+    Args:
+        list_id (str): IMDb list ID, chart name, or URL
+
+    Returns:
+        tuple: (url, is_chart)
+
+    Raises:
+        ValueError: If the list ID or URL format is not recognised
+    """
+    if list_id.startswith(('http://', 'https://')):
+        url = list_id.rstrip('/')
+        if '/chart/' in url:
+            return url, True
+        if '/list/' in url or '/user/' in url:
+            return url, False
+        raise ValueError("Invalid IMDb URL format")
+
+    if list_id in ['top', 'boxoffice', 'moviemeter', 'tvmeter']:
+        return f"https://www.imdb.com/chart/{list_id}", True
+    if list_id.startswith("ls"):
+        return f"https://www.imdb.com/list/{list_id}", False
+    if list_id.startswith("ur"):
+        return f"https://www.imdb.com/user/{list_id}/watchlist", False
+
+    raise ValueError("Invalid IMDb list ID format")
 
 
 @register_provider("imdb")
@@ -27,32 +289,25 @@ def fetch_imdb_list(list_id: str) -> List[Dict[str, Any]]:
     """
     media_items = []
     logging.info(f"Fetching IMDb list: {list_id}")
-    
+
+    url, is_chart = _resolve_imdb_url(list_id)
+
+    # Prefer the browser-free route. It reads the JSON IMDb embeds in the page,
+    # which avoids Chrome, the CSS selectors and the pagination entirely.
+    # Anything less than a clean result falls through to Selenium below.
+    try:
+        direct_items = fetch_imdb_list_via_http(url)
+    except Exception as e:
+        logging.warning(f"IMDb direct fetch raised, falling back to browser: {e}")
+        direct_items = None
+
+    if direct_items:
+        return direct_items
+
+    logging.info("Falling back to browser-based IMDb scrape")
+
     try:
         with SB(uc=True, headless=True) as sb:
-            # Handle full URLs vs list IDs
-            if list_id.startswith(('http://', 'https://')):
-                url = list_id.rstrip('/')  # Use the provided URL directly
-                if '/chart/' in url:
-                    is_chart = True
-                elif '/list/' in url or '/user/' in url:
-                    is_chart = False
-                else:
-                    raise ValueError("Invalid IMDb URL format")
-            else:
-                # Existing logic for list IDs
-                if list_id in ['top', 'boxoffice', 'moviemeter', 'tvmeter']:
-                    url = f"https://www.imdb.com/chart/{list_id}"
-                    is_chart = True
-                elif list_id.startswith("ls"):
-                    url = f"https://www.imdb.com/list/{list_id}"
-                    is_chart = False
-                elif list_id.startswith("ur"):
-                    url = f"https://www.imdb.com/user/{list_id}/watchlist"
-                    is_chart = False
-                else:
-                    raise ValueError("Invalid IMDb list ID format")
-            
             logging.info(f"Attempting to load URL: {url}")
             sb.open(url)
             
