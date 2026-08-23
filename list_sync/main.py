@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Any, Optional, Tuple
 
 from .api.overseerr import OverseerrClient
+from .api import tmdb as tmdb_api
 from .config import (
     load_config, load_env_config, load_env_lists, save_config,
     CONFIG_FILE
@@ -576,9 +577,31 @@ def process_media_item(item: Dict[str, Any], overseerr_client: OverseerrClient, 
                 match_method = "TMDB_ID_DIRECT"
                 logging.info(f"✅ SUCCESS: Direct TMDB ID lookup")
         
-        # METHOD 2: IMDB ID → Trakt → TMDB ID
+        # METHOD 2: IMDB ID → TMDB ID, straight from TMDB's own /find endpoint.
+        # One hop instead of two, and a free API key rather than Trakt's paid
+        # VIP requirement for registering an application.
+        if not search_result and imdb_id and tmdb_api.is_available():
+            logging.info(f"🔍 METHOD 2: IMDB ID → TMDB /find (IMDB: {imdb_id})")
+            tmdb_match = tmdb_api.resolve_imdb_id(imdb_id, media_type)
+            if tmdb_match:
+                resolved_tmdb_id = tmdb_match["tmdb_id"]
+                resolved_type = tmdb_match["media_type"]
+                logging.info(
+                    f"✅ TMDB resolved IMDB {imdb_id} → TMDB {resolved_tmdb_id} "
+                    f"('{tmdb_match.get('title')}')"
+                )
+                search_result = overseerr_client.get_media_by_tmdb_id(resolved_tmdb_id, resolved_type)
+                if search_result:
+                    match_method = "IMDB_TO_TMDB_DIRECT"
+                    logging.info(f"✅ SUCCESS: IMDB→TMDB direct lookup")
+                    tmdb_id = resolved_tmdb_id
+                    media_type = resolved_type
+            else:
+                logging.info(f"⚠️  TMDB could not resolve IMDB ID {imdb_id}")
+
+        # METHOD 3: IMDB ID → Trakt → TMDB ID
         if not search_result and imdb_id:
-            logging.info(f"🔍 METHOD 2: IMDB ID → Trakt → TMDB ID (IMDB: {imdb_id})")
+            logging.info(f"🔍 METHOD 3: IMDB ID → Trakt → TMDB ID (IMDB: {imdb_id})")
             trakt_result = search_trakt_by_imdb_id(imdb_id)
             if trakt_result and trakt_result.get('tmdb_id'):
                 resolved_tmdb_id = trakt_result['tmdb_id']
@@ -600,9 +623,9 @@ def process_media_item(item: Dict[str, Any], overseerr_client: OverseerrClient, 
             else:
                 logging.info(f"⚠️  WARNING: Trakt could not resolve IMDB ID {imdb_id} to TMDB ID")
         
-        # METHOD 3: Title/Year → Trakt → TMDB ID
+        # METHOD 4: Title/Year → Trakt → TMDB ID
         if not search_result:
-            logging.info(f"🔍 METHOD 3: Title/Year → Trakt → TMDB ID")
+            logging.info(f"🔍 METHOD 4: Title/Year → Trakt → TMDB ID")
             trakt_result = search_trakt_by_title(search_title, year, media_type)
             if trakt_result and trakt_result.get('tmdb_id'):
                 resolved_tmdb_id = trakt_result['tmdb_id']
@@ -626,9 +649,9 @@ def process_media_item(item: Dict[str, Any], overseerr_client: OverseerrClient, 
             else:
                 logging.info(f"⚠️  Trakt could not find TMDB ID for '{search_title}' ({year})")
         
-        # METHOD 4: Fallback to Overseerr title search (least reliable)
+        # METHOD 5: Fallback to Overseerr title search (least reliable)
         if not search_result:
-            logging.warning(f"⚠️  METHOD 4: Falling back to Overseerr title search (less reliable)")
+            logging.warning(f"⚠️  METHOD 5: Falling back to Overseerr title search (less reliable)")
             search_result = overseerr_client.search_media(
                 search_title,  # Use cleaned title for search
                 media_type,
