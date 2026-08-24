@@ -1936,7 +1936,20 @@ async def test_overseerr_connection(data: dict):
                 "valid": False,
                 "error": "URL must start with http:// or https://"
             }
-        
+
+        # The caller supplies this URL and the server then requests it. A
+        # self-hosted Overseerr is normally on a private address, so those stay
+        # permitted, but cloud metadata endpoints and non-HTTP schemes never are.
+        from list_sync.utils.url_safety import validate_outbound_url
+
+        url_ok, url_reason = validate_outbound_url(overseerr_url, allow_private=True)
+        if not url_ok:
+            logging.warning(f"Blocked Overseerr connection test: {url_reason}")
+            return {
+                "valid": False,
+                "error": url_reason
+            }
+
         # Test connection by fetching user list and finding the default user
         try:
             headers = {"X-Api-Key": overseerr_api_key}
@@ -2337,6 +2350,14 @@ async def save_step1_essential(data: dict):
             errors['overseerr_url'] = 'Overseerr URL is required'
         elif not overseerr_url.startswith(('http://', 'https://')):
             errors['overseerr_url'] = 'URL must start with http:// or https://'
+        else:
+            # This URL gets fetched by the server below, so refuse the targets
+            # that are never a real Overseerr. Private addresses stay allowed:
+            # a self-hosted instance is normally on one.
+            from list_sync.utils.url_safety import validate_outbound_url
+            _ok, _reason = validate_outbound_url(overseerr_url, allow_private=True)
+            if not _ok:
+                errors['overseerr_url'] = _reason
         
         # Validate Overseerr API Key
         overseerr_api_key = data.get('overseerr_api_key', '').strip()
@@ -6965,10 +6986,22 @@ async def test_discord_notification(payload: dict = None):
         
         if not webhook_url:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Discord webhook URL is required. Please provide a webhook URL or set DISCORD_WEBHOOK_URL in your environment variables."
             )
-        
+
+        # The URL arrives from the caller and the server then requests it, so
+        # anything other than a real Discord webhook host turns this endpoint
+        # into an open request proxy. Discord webhooks only live on Discord.
+        from list_sync.utils.url_safety import validate_outbound_url, DISCORD_WEBHOOK_HOSTS
+
+        allowed, reason = validate_outbound_url(
+            webhook_url, allow_private=False, allowed_hosts=DISCORD_WEBHOOK_HOSTS
+        )
+        if not allowed:
+            logging.warning(f"Blocked Discord webhook test: {reason}")
+            raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {reason}")
+
         # Try to use the discord-webhook library if available
         try:
             from discord_webhook import DiscordWebhook, DiscordEmbed
@@ -7058,6 +7091,9 @@ async def test_discord_notification(payload: dict = None):
         if hasattr(e, 'response') and e.response is not None:
             error_msg += f" (Status: {e.response.status_code})"
         raise HTTPException(status_code=500, detail=error_msg)
+    except HTTPException:
+        # A rejected webhook URL is a deliberate 400, not a server fault.
+        raise
     except Exception as e:
         import traceback
         error_detail = f"Failed to send test notification: {str(e)}\n{traceback.format_exc()}"
@@ -8222,10 +8258,17 @@ async def proxy_image(url: str = Query(..., description="Image URL to proxy/cach
     import os
 
     try:
-        # Validate URL
-        if not url or not url.startswith(('http://', 'https://')):
-            raise HTTPException(status_code=400, detail="Invalid image URL")
-        
+        # This endpoint fetches a caller-supplied URL and returns the body, so
+        # without a check it is a read primitive against anything the server
+        # can reach. Posters come from public CDNs, so private and reserved
+        # addresses are refused outright.
+        from list_sync.utils.url_safety import validate_outbound_url
+
+        allowed, reason = validate_outbound_url(url, allow_private=False)
+        if not allowed:
+            logging.warning(f"Blocked image proxy request: {reason}")
+            raise HTTPException(status_code=400, detail=f"Invalid image URL: {reason}")
+
         # Check if we have this image cached
         cached = get_cached_image(url)
         if cached:
@@ -8265,11 +8308,24 @@ async def proxy_image(url: str = Query(..., description="Image URL to proxy/cach
                 # File missing but DB record exists - log and re-download
                 logging.warning(f"Cached image file missing, re-downloading: {url}")
 
-        # Download the image from original source (Trakt, TMDB, etc.)
+        # Download the image from original source (Trakt, TMDB, etc.).
+        # Redirects are not followed: a permitted public URL is free to answer
+        # with a 302 to a private address, which would defeat the check above.
         logging.info(f"Downloading image from source: {url}")
-        response = requests.get(url, timeout=30, headers={
+        response = requests.get(url, timeout=30, allow_redirects=False, headers={
             'User-Agent': 'ListSync/1.0.0'
         })
+
+        if response.status_code in (301, 302, 303, 307, 308):
+            redirect_target = response.headers.get('Location', '')
+            allowed, reason = validate_outbound_url(redirect_target, allow_private=False)
+            if not allowed:
+                logging.warning(f"Blocked image proxy redirect to {redirect_target}: {reason}")
+                raise HTTPException(status_code=400, detail=f"Unsafe redirect: {reason}")
+            logging.info(f"Following image redirect to: {redirect_target}")
+            response = requests.get(redirect_target, timeout=30, allow_redirects=False, headers={
+                'User-Agent': 'ListSync/1.0.0'
+            })
 
         if response.status_code != 200:
             raise HTTPException(
@@ -8366,6 +8422,10 @@ async def proxy_image(url: str = Query(..., description="Image URL to proxy/cach
                 }
             )
 
+    except HTTPException:
+        # A rejected URL is a deliberate 400, not a server fault - let it through
+        # rather than have the catch-all below turn it into a 500.
+        raise
     except requests.exceptions.RequestException as e:
         logging.error(f"Error fetching image {url}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch image: {str(e)}")
