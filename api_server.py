@@ -41,6 +41,7 @@ from list_sync.database import (
     load_list_ids,
     save_list_id,
     delete_list,
+    update_list_user_id,
     DB_FILE,
     init_database
 )
@@ -128,6 +129,9 @@ class ListAdd(BaseModel):
     list_type: str
     list_id: str
     user_id: str = "1"
+
+class ListUserUpdate(BaseModel):
+    user_id: str
 
 class ProcessInfo(BaseModel):
     pid: int
@@ -1932,7 +1936,20 @@ async def test_overseerr_connection(data: dict):
                 "valid": False,
                 "error": "URL must start with http:// or https://"
             }
-        
+
+        # The caller supplies this URL and the server then requests it. A
+        # self-hosted Overseerr is normally on a private address, so those stay
+        # permitted, but cloud metadata endpoints and non-HTTP schemes never are.
+        from list_sync.utils.url_safety import validate_outbound_url
+
+        url_ok, url_reason = validate_outbound_url(overseerr_url, allow_private=True)
+        if not url_ok:
+            logging.warning(f"Blocked Overseerr connection test: {url_reason}")
+            return {
+                "valid": False,
+                "error": url_reason
+            }
+
         # Test connection by fetching user list and finding the default user
         try:
             headers = {"X-Api-Key": overseerr_api_key}
@@ -2333,6 +2350,14 @@ async def save_step1_essential(data: dict):
             errors['overseerr_url'] = 'Overseerr URL is required'
         elif not overseerr_url.startswith(('http://', 'https://')):
             errors['overseerr_url'] = 'URL must start with http:// or https://'
+        else:
+            # This URL gets fetched by the server below, so refuse the targets
+            # that are never a real Overseerr. Private addresses stay allowed:
+            # a self-hosted instance is normally on one.
+            from list_sync.utils.url_safety import validate_outbound_url
+            _ok, _reason = validate_outbound_url(overseerr_url, allow_private=True)
+            if not _ok:
+                errors['overseerr_url'] = _reason
         
         # Validate Overseerr API Key
         overseerr_api_key = data.get('overseerr_api_key', '').strip()
@@ -3048,7 +3073,8 @@ async def get_lists():
     """Get all configured lists"""
     try:
         lists = load_list_ids()
-        
+        user_names = _overseerr_user_names()
+
         # Add display names and include item counts, last_synced, and user_id with proper timezone conversion
         formatted_lists = []
         for i, list_item in enumerate(lists):
@@ -3113,7 +3139,10 @@ async def get_lists():
                 "display_name": display_name,
                 "item_count": list_item.get('item_count', 0),  # Include item count from database
                 "last_synced": last_synced,  # Include converted last_synced timestamp
-                "user_id": list_item.get('user_id', '1')  # Include user_id for per-list user assignment
+                "user_id": list_item.get('user_id', '1'),  # Include user_id for per-list user assignment
+                # Resolve the name here so the UI can show who a list requests
+                # as even before the users store has loaded
+                "user_display_name": user_names.get(str(list_item.get('user_id', '1'))) or None
             })
         
         return {"lists": formatted_lists}
@@ -3151,17 +3180,103 @@ async def get_lists_debug():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _overseerr_user_names() -> Dict[str, str]:
+    """Map Overseerr user IDs to display names, from the local user cache."""
+    try:
+        from list_sync.database import get_overseerr_users
+        return {
+            str(u.get('id')): (u.get('display_name') or u.get('email') or '')
+            for u in (get_overseerr_users() or [])
+        }
+    except Exception as e:
+        logging.debug(f"Could not load Overseerr user names: {e}")
+        return {}
+
+
+def _describe_overseerr_user(user_id: str) -> Optional[str]:
+    """Look up an Overseerr user's display name from the local user cache."""
+    return _overseerr_user_names().get(str(user_id)) or None
+
+
+def _validate_overseerr_user(user_id: str) -> Optional[str]:
+    """
+    Check a user ID against the known Overseerr users.
+
+    Returns:
+        Optional[str]: An error message if the user is definitely unusable,
+            None if the user is fine or can't be verified right now.
+    """
+    try:
+        from list_sync.database import get_overseerr_users
+        users = get_overseerr_users()
+    except Exception as e:
+        logging.debug(f"Could not verify user {user_id}: {e}")
+        return None
+
+    # An empty cache means users have never been synced - don't block on it.
+    if not users:
+        return None
+
+    if any(str(u.get('id')) == str(user_id) for u in users):
+        return None
+
+    known = ", ".join(f"{u.get('id')} ({u.get('display_name')})" for u in users[:20])
+    return (
+        f"Overseerr user ID {user_id} does not exist. Known users: {known}. "
+        f"Re-sync users from Settings if this looks out of date."
+    )
+
+
+@app.patch("/api/lists/{list_type}/{list_id:path}/user")
+async def update_list_user_endpoint(list_type: str, list_id: str, payload: ListUserUpdate):
+    """Change which Overseerr user a list requests as - uses :path for full URLs"""
+    try:
+        user_id = str(payload.user_id).strip()
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required")
+
+        validation_error = _validate_overseerr_user(user_id)
+        if validation_error:
+            raise HTTPException(status_code=400, detail=validation_error)
+
+        if not update_list_user_id(list_type, list_id, user_id):
+            raise HTTPException(
+                status_code=404,
+                detail=f"No {list_type} list found matching '{list_id}'"
+            )
+
+        display_name = _describe_overseerr_user(user_id)
+        return {
+            "success": True,
+            "list_type": list_type,
+            "list_id": list_id,
+            "user_id": user_id,
+            "user_display_name": display_name,
+            "message": f"{list_type} list now requests as {display_name or f'user {user_id}'}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/lists")
 async def add_list(list_add: ListAdd):
     """Add new list with URL generation and auto-detection of special Trakt lists"""
     try:
         # Import the construct_list_url function
         from list_sync.utils.helpers import construct_list_url
-        
+
         list_type = list_add.list_type
         list_id = list_add.list_id
-        user_id = list_add.user_id
-        
+        user_id = str(list_add.user_id).strip() or "1"
+
+        # Catch a bad requester here rather than at sync time, when it would
+        # surface as a failure on every item in the list.
+        validation_error = _validate_overseerr_user(user_id)
+        if validation_error:
+            raise HTTPException(status_code=400, detail=validation_error)
+
         # Auto-detect special Trakt lists (trending:movies, popular:shows, etc.)
         if list_type == "trakt" and ':' in list_id:
             parts = list_id.split(':')
@@ -3182,8 +3297,11 @@ async def add_list(list_add: ListAdd):
             "message": f"Added {list_type} list: {list_id}",
             "list_url": list_url,
             "item_count": 0,
-            "user_id": user_id
+            "user_id": user_id,
+            "user_display_name": _describe_overseerr_user(user_id)
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -6868,10 +6986,22 @@ async def test_discord_notification(payload: dict = None):
         
         if not webhook_url:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Discord webhook URL is required. Please provide a webhook URL or set DISCORD_WEBHOOK_URL in your environment variables."
             )
-        
+
+        # The URL arrives from the caller and the server then requests it, so
+        # anything other than a real Discord webhook host turns this endpoint
+        # into an open request proxy. Discord webhooks only live on Discord.
+        from list_sync.utils.url_safety import validate_outbound_url, DISCORD_WEBHOOK_HOSTS
+
+        allowed, reason = validate_outbound_url(
+            webhook_url, allow_private=False, allowed_hosts=DISCORD_WEBHOOK_HOSTS
+        )
+        if not allowed:
+            logging.warning(f"Blocked Discord webhook test: {reason}")
+            raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {reason}")
+
         # Try to use the discord-webhook library if available
         try:
             from discord_webhook import DiscordWebhook, DiscordEmbed
@@ -6961,6 +7091,9 @@ async def test_discord_notification(payload: dict = None):
         if hasattr(e, 'response') and e.response is not None:
             error_msg += f" (Status: {e.response.status_code})"
         raise HTTPException(status_code=500, detail=error_msg)
+    except HTTPException:
+        # A rejected webhook URL is a deliberate 400, not a server fault.
+        raise
     except Exception as e:
         import traceback
         error_detail = f"Failed to send test notification: {str(e)}\n{traceback.format_exc()}"
@@ -8096,6 +8229,49 @@ async def get_sync_session_raw_logs(session_id: str):
 # Image Caching and Proxy Endpoints - Trakt API Compliance
 # ============================================================================
 
+# Magic bytes for the formats posters actually arrive in. Names match what
+# imghdr.what() returned, because the caller interpolates the result straight
+# into an image/{type} media type.
+_IMAGE_SIGNATURES = (
+    (b"\xff\xd8\xff", "jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "png"),
+    (b"GIF87a", "gif"),
+    (b"GIF89a", "gif"),
+    (b"BM", "bmp"),
+    (b"II*\x00", "tiff"),
+    (b"MM\x00*", "tiff"),
+)
+
+
+def sniff_image_type(data: bytes):
+    """
+    Identify an image format from its leading bytes.
+
+    Replaces imghdr.what(), which was removed from the standard library in
+    Python 3.13. Returns the same lowercase format names, and None when the
+    data isn't a format we recognise, so the caller's Content-Type fallback
+    still runs.
+
+    Args:
+        data (bytes): The start of the image file
+
+    Returns:
+        Optional[str]: Format name such as 'jpeg', or None if unrecognised
+    """
+    if not data:
+        return None
+
+    # WebP is a RIFF container, so the marker is not at the start.
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+
+    for signature, name in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return name
+
+    return None
+
+
 @app.get("/api/images/proxy")
 async def proxy_image(url: str = Query(..., description="Image URL to proxy/cache")):
     """
@@ -8121,14 +8297,20 @@ async def proxy_image(url: str = Query(..., description="Image URL to proxy/cach
     """
     from list_sync.database import get_cached_image, save_cached_image
     import requests
-    import imghdr
     import os
 
     try:
-        # Validate URL
-        if not url or not url.startswith(('http://', 'https://')):
-            raise HTTPException(status_code=400, detail="Invalid image URL")
-        
+        # This endpoint fetches a caller-supplied URL and returns the body, so
+        # without a check it is a read primitive against anything the server
+        # can reach. Posters come from public CDNs, so private and reserved
+        # addresses are refused outright.
+        from list_sync.utils.url_safety import validate_outbound_url
+
+        allowed, reason = validate_outbound_url(url, allow_private=False)
+        if not allowed:
+            logging.warning(f"Blocked image proxy request: {reason}")
+            raise HTTPException(status_code=400, detail=f"Invalid image URL: {reason}")
+
         # Check if we have this image cached
         cached = get_cached_image(url)
         if cached:
@@ -8168,11 +8350,24 @@ async def proxy_image(url: str = Query(..., description="Image URL to proxy/cach
                 # File missing but DB record exists - log and re-download
                 logging.warning(f"Cached image file missing, re-downloading: {url}")
 
-        # Download the image from original source (Trakt, TMDB, etc.)
+        # Download the image from original source (Trakt, TMDB, etc.).
+        # Redirects are not followed: a permitted public URL is free to answer
+        # with a 302 to a private address, which would defeat the check above.
         logging.info(f"Downloading image from source: {url}")
-        response = requests.get(url, timeout=30, headers={
+        response = requests.get(url, timeout=30, allow_redirects=False, headers={
             'User-Agent': 'ListSync/1.0.0'
         })
+
+        if response.status_code in (301, 302, 303, 307, 308):
+            redirect_target = response.headers.get('Location', '')
+            allowed, reason = validate_outbound_url(redirect_target, allow_private=False)
+            if not allowed:
+                logging.warning(f"Blocked image proxy redirect to {redirect_target}: {reason}")
+                raise HTTPException(status_code=400, detail=f"Unsafe redirect: {reason}")
+            logging.info(f"Following image redirect to: {redirect_target}")
+            response = requests.get(redirect_target, timeout=30, allow_redirects=False, headers={
+                'User-Agent': 'ListSync/1.0.0'
+            })
 
         if response.status_code != 200:
             raise HTTPException(
@@ -8198,7 +8393,7 @@ async def proxy_image(url: str = Query(..., description="Image URL to proxy/cach
             )
 
         # Detect image type from actual data (most reliable method)
-        image_type = imghdr.what(None, image_data)
+        image_type = sniff_image_type(image_data)
         if not image_type:
             # Fallback: try to detect from URL or Content-Type header
             content_type = response.headers.get('Content-Type', '')
@@ -8269,6 +8464,10 @@ async def proxy_image(url: str = Query(..., description="Image URL to proxy/cach
                 }
             )
 
+    except HTTPException:
+        # A rejected URL is a deliberate 400, not a server fault - let it through
+        # rather than have the catch-all below turn it into a 500.
+        raise
     except requests.exceptions.RequestException as e:
         logging.error(f"Error fetching image {url}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch image: {str(e)}")

@@ -14,6 +14,102 @@ from .utils.logger import DATA_DIR
 # Define database file path
 DB_FILE = os.path.join(DATA_DIR, "list_sync.db")
 
+# Default Overseerr requester when a list has no user assigned (admin account)
+DEFAULT_REQUESTER_USER_ID = "1"
+
+
+def normalize_list_id(list_type: str, list_id: str) -> str:
+    """
+    Reduce a list identifier to a canonical form for comparison.
+
+    The same list can be stored either as a bare ID ("ls123456789") or as the
+    full URL a user pasted ("https://www.imdb.com/list/ls123456789/"). Callers
+    that look a list up by ID must not care which form was used, otherwise the
+    lookup silently misses and the list falls back to defaults.
+
+    Args:
+        list_type (str): Type of list (imdb, trakt, letterboxd, ...)
+        list_id (str): List ID or URL
+
+    Returns:
+        str: Canonical key for this list
+    """
+    if not list_id:
+        return ""
+
+    key = str(list_id).strip().rstrip('/')
+    lowered = key.lower()
+
+    # For IMDb, the list/user/chart token uniquely identifies the list, so pull
+    # it out of whatever URL form was supplied.
+    if (list_type or "").lower() == "imdb":
+        import re
+        match = re.search(r'\b(ls\d+|ur\d+)\b', lowered)
+        if match:
+            return match.group(1)
+        chart_match = re.search(r'/chart/([a-z0-9_-]+)', lowered)
+        if chart_match:
+            return chart_match.group(1)
+        return lowered
+
+    # Everything else: compare on the URL minus scheme/host boilerplate.
+    for prefix in ("https://", "http://"):
+        if lowered.startswith(prefix):
+            lowered = lowered.removeprefix(prefix)
+            break
+
+    return lowered.removeprefix("www.")
+
+
+def find_list_rows(cursor, list_type: str, list_id: str) -> List[tuple]:
+    """
+    Find every list row matching a type and ID, tolerating ID/URL form differences.
+
+    Older versions stored the same list under both its bare ID and its full URL,
+    so a logical list can occupy more than one row. Anything that mutates a list
+    should act on all of them.
+
+    Args:
+        cursor: An open sqlite3 cursor
+        list_type (str): Type of list
+        list_id (str): List ID or URL in any stored form
+
+    Returns:
+        List[tuple]: (rowid, stored_list_id) pairs, exact match first
+    """
+    # Fast path: exact match on the stored ID
+    cursor.execute(
+        "SELECT rowid, list_id FROM lists WHERE list_type = ? AND list_id = ?",
+        (list_type, list_id)
+    )
+    matches = cursor.fetchall()
+
+    target = normalize_list_id(list_type, list_id)
+    if not target:
+        return matches
+
+    # Slow path: compare canonical forms across this list type
+    seen = {row[0] for row in matches}
+    cursor.execute("SELECT rowid, list_id FROM lists WHERE list_type = ?", (list_type,))
+    for candidate_rowid, candidate_id in cursor.fetchall():
+        if candidate_rowid in seen:
+            continue
+        if normalize_list_id(list_type, candidate_id) == target:
+            matches.append((candidate_rowid, candidate_id))
+
+    return matches
+
+
+def find_list_row(cursor, list_type: str, list_id: str) -> Optional[tuple]:
+    """
+    Find a single list row by type and ID, tolerating ID/URL form differences.
+
+    Returns:
+        Optional[tuple]: (rowid, stored_list_id) or None if no list matches
+    """
+    matches = find_list_rows(cursor, list_type, list_id)
+    return matches[0] if matches else None
+
 
 def update_existing_list_urls():
     """Update URLs for existing lists that may have incorrect URLs stored."""
@@ -256,7 +352,7 @@ def init_database():
         
         # Add user_id column to lists if it doesn't exist (for per-list user assignment)
         try:
-            cursor.execute('ALTER TABLE lists ADD COLUMN user_id TEXT DEFAULT "1"')
+            cursor.execute("ALTER TABLE lists ADD COLUMN user_id TEXT DEFAULT '1'")
             logging.info("Added user_id column to lists table")
         except sqlite3.OperationalError:
             pass
@@ -454,13 +550,20 @@ def init_database():
         logging.warning(f"Image migration check failed: {e}")
 
 
-def save_list_id(list_id: str, list_type: str, list_url: Optional[str] = None, item_count: Optional[int] = None, user_id: str = "1"):
-    """Save list ID, URL, item count, and user_id to database, converting URLs to IDs if needed."""
+def save_list_id(list_id: str, list_type: str, list_url: Optional[str] = None, item_count: Optional[int] = None, user_id: Optional[str] = None):
+    """
+    Save list ID, URL, item count, and user_id to database, converting URLs to IDs if needed.
+
+    Re-saving an existing list preserves the columns this call does not supply
+    (assigned user, last_synced, cached poster). Passing user_id=None means
+    "leave the assigned user alone", so callers that don't manage users can
+    never silently reset a list back to the admin account.
+    """
     from .utils.helpers import construct_list_url
-    
+
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
-        
+
         # For IMDb URLs, store the full URL
         if list_type == "imdb" and list_id.startswith(('http://', 'https://')):
             # Keep the full URL as is
@@ -485,12 +588,84 @@ def save_list_id(list_id: str, list_type: str, list_url: Optional[str] = None, i
         # Set default item count if not provided
         if item_count is None:
             item_count = 0
-            
-        cursor.execute(
-            "INSERT OR REPLACE INTO lists (list_type, list_id, list_url, item_count, user_id) VALUES (?, ?, ?, ?, ?)",
-            (list_type, id_to_save, list_url, item_count, user_id)
-        )
+
+        existing = find_list_row(cursor, list_type, id_to_save)
+
+        if existing:
+            # Update in place so last_synced, poster cache and (when the caller
+            # didn't specify one) the assigned user survive the re-save. The
+            # stored list_id is left as-is: it already identifies this list, and
+            # rewriting it could collide with a duplicate row holding the other
+            # ID form.
+            rowid = existing[0]
+            if user_id is None:
+                cursor.execute(
+                    "UPDATE lists SET list_url = ?, item_count = ? WHERE rowid = ?",
+                    (list_url, item_count, rowid)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE lists SET list_url = ?, item_count = ?, user_id = ? WHERE rowid = ?",
+                    (list_url, item_count, str(user_id), rowid)
+                )
+        else:
+            cursor.execute(
+                "INSERT INTO lists (list_type, list_id, list_url, item_count, user_id) VALUES (?, ?, ?, ?, ?)",
+                (list_type, id_to_save, list_url, item_count,
+                 str(user_id) if user_id is not None else DEFAULT_REQUESTER_USER_ID)
+            )
+
         conn.commit()
+
+
+def get_list_user_id(list_type: str, list_id: str) -> Optional[str]:
+    """
+    Get the Overseerr user a list requests as.
+
+    Args:
+        list_type (str): Type of list
+        list_id (str): List ID or URL in any form
+
+    Returns:
+        Optional[str]: The assigned user ID, or None if the list isn't configured
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        row = find_list_row(cursor, list_type, list_id)
+        if not row:
+            return None
+
+        cursor.execute("SELECT user_id FROM lists WHERE rowid = ?", (row[0],))
+        result = cursor.fetchone()
+        if not result or result[0] is None:
+            return DEFAULT_REQUESTER_USER_ID
+        return str(result[0])
+
+
+def update_list_user_id(list_type: str, list_id: str, user_id: str) -> bool:
+    """
+    Reassign which Overseerr user a list requests as.
+
+    Args:
+        list_type (str): Type of list
+        list_id (str): List ID or URL in any form
+        user_id (str): Overseerr user ID to request as
+
+    Returns:
+        bool: True if a list was updated, False if no matching list exists
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        rows = find_list_rows(cursor, list_type, list_id)
+        if not rows:
+            logging.warning(f"Cannot set user for {list_type}:{list_id} - list not found")
+            return False
+
+        for rowid, stored_id in rows:
+            cursor.execute("UPDATE lists SET user_id = ? WHERE rowid = ?", (str(user_id), rowid))
+            logging.info(f"List {list_type}:{stored_id} will now request as Overseerr user {user_id}")
+        conn.commit()
+        return True
 
 
 def update_list_item_count(list_type: str, list_id: str, item_count: int):
@@ -554,11 +729,11 @@ def load_list_ids() -> List[Dict[str, str]]:
             else:
                 list_item["last_synced"] = None
             
-            # Add user_id (default to "1" if None for existing lists)
+            # Add user_id (default to admin if None for existing lists)
             if len(row) > 5 and row[5] is not None:
-                list_item["user_id"] = row[5]
+                list_item["user_id"] = str(row[5])
             else:
-                list_item["user_id"] = "1"
+                list_item["user_id"] = DEFAULT_REQUESTER_USER_ID
                 
             results.append(list_item)
         return results

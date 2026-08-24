@@ -282,6 +282,7 @@ import type { List } from '~/types'
 // This matches the pattern used in index.vue, collections.vue, and other working pages
 const listsStore = useListsStore()
 const syncStore = useSyncStore()
+const usersStore = useUsersStore()
 const { showSuccess, showError } = useToast()
 
 // Router and route (declare early to avoid TDZ issues)
@@ -641,6 +642,12 @@ onMounted(async () => {
       console.log('[Lists] onMounted: Fetching sync status...')
       await syncStore.fetchLiveSyncStatus()
       console.log('[Lists] onMounted: Sync status fetched successfully')
+
+      // Each card shows and edits the Overseerr user its list requests as, so
+      // the user list has to be loaded here rather than only in the add modal.
+      usersStore.fetchUsers().catch((err) => {
+        console.error('[Lists] onMounted: Failed to fetch Overseerr users:', err)
+      })
       
       // Wait for component to be fully rendered
       await nextTick()

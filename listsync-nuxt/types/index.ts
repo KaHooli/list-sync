@@ -27,6 +27,7 @@ export interface List {
   status?: string
   last_synced?: string
   user_id?: string
+  user_display_name?: string | null
 }
 
 export interface MediaItem {

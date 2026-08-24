@@ -54,11 +54,27 @@
           <span>{{ getSyncStatusText() }}</span>
         </div>
         
-        <!-- User Badge -->
-        <Tooltip v-if="getUserInfo()" :content="`Requests as: ${getUserInfo()?.display_name || 'User ' + list.user_id}`">
-          <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-blue-500/10 border border-blue-500/30 text-blue-300">
+        <!-- User Badge - doubles as the control for who this list requests as -->
+        <Tooltip :content="`Requests as ${currentUserLabel} — click to change`">
+          <div
+            class="relative flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-blue-500/10 border border-blue-500/30 text-blue-300 transition-colors hover:border-blue-400/60 hover:bg-blue-500/20"
+            :class="{ 'opacity-60': isUpdatingUser }"
+            @click.stop
+          >
             <component :is="UserIcon" :size="12" />
-            <span>{{ getUserInfo()?.display_name || `User ${list.user_id || '1'}` }}</span>
+            <span>{{ currentUserLabel }}</span>
+            <select
+              :value="list.user_id || '1'"
+              :disabled="isUpdatingUser || usersStore.users.length === 0"
+              aria-label="Overseerr user this list requests as"
+              class="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+              @click.stop
+              @change="handleUserChange"
+            >
+              <option v-for="user in usersStore.users" :key="user.id" :value="String(user.id)">
+                {{ user.display_name || `User ${user.id}` }}
+              </option>
+            </select>
           </div>
         </Tooltip>
       </div>
@@ -199,13 +215,42 @@ const syncStore = useSyncStore()
 const systemStore = useSystemStore()
 const usersStore = useUsersStore()
 
+const listsStore = useListsStore()
+
 // State
 const isSyncing = ref(false)
+const isUpdatingUser = ref(false)
 
 // Get user info for this list
 const getUserInfo = () => {
   const userId = props.list.user_id || '1'
   return usersStore.getUserById(userId)
+}
+
+// Prefer the live users store, fall back to the name the API resolved, then to
+// the bare ID - so the badge says something useful even before users load.
+const currentUserLabel = computed(() => {
+  return getUserInfo()?.display_name
+    || props.list.user_display_name
+    || `User ${props.list.user_id || '1'}`
+})
+
+const handleUserChange = async (event: Event) => {
+  const newUserId = (event.target as HTMLSelectElement).value
+  if (!newUserId || newUserId === String(props.list.user_id || '1')) return
+
+  const previousLabel = currentUserLabel.value
+  isUpdatingUser.value = true
+
+  try {
+    await listsStore.updateListUser(props.list.list_type, props.list.list_id, newUserId)
+    const newLabel = usersStore.getUserById(newUserId)?.display_name || `User ${newUserId}`
+    showSuccess('Requester Updated', `${getDisplayTitle()} now requests as ${newLabel}`)
+  } catch (err: any) {
+    showError('Update Failed', err?.message || `Could not change the requester from ${previousLabel}`)
+  } finally {
+    isUpdatingUser.value = false
+  }
 }
 
 // Check if this specific list is syncing
