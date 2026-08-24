@@ -210,27 +210,99 @@ def initialize_sync_interval():
         return 0
 
 
+def _is_interactive() -> bool:
+    """
+    Whether there is a human on the other end who could answer a prompt.
+
+    In a container there isn't, and calling input() raises EOFError, so the
+    caller needs to fail with an explanation instead of asking a question
+    nobody will see.
+    """
+    if os.getenv('AUTOMATED_MODE', '').strip().lower() == 'true':
+        return False
+    if os.getenv('RUNNING_IN_DOCKER', '').strip().lower() == 'true':
+        return False
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _load_env_config_with_retry(total_seconds: int = 120) -> tuple:
+    """
+    Load configuration, waiting for Overseerr to become reachable.
+
+    load_env_config() validates the credentials by calling Overseerr and
+    returns nothing at all if that call fails. On a container restart the
+    Overseerr host is routinely unresolvable for the first few seconds, so a
+    single attempt turns a momentary startup ordering issue into a process
+    that never syncs again until someone restarts it by hand.
+
+    Args:
+        total_seconds (int): How long to keep retrying before giving up
+
+    Returns:
+        tuple: (url, api_key, user_id), all None if it never became reachable
+    """
+    delay = 2
+    deadline = time.monotonic() + total_seconds
+    attempt = 0
+
+    while True:
+        attempt += 1
+        url, api_key, user_id, _, _, _ = load_env_config()
+        if url and api_key:
+            if attempt > 1:
+                logging.info(f"Overseerr became reachable on attempt {attempt}")
+            return url, api_key, user_id
+
+        if time.monotonic() >= deadline:
+            logging.error(
+                f"Overseerr still unreachable after {total_seconds}s and {attempt} attempts - "
+                f"giving up on this startup. Check that the Overseerr container is running "
+                f"and that OVERSEERR_URL points at it."
+            )
+            return None, None, None
+
+        logging.warning(
+            f"Configuration not usable yet (attempt {attempt}) - Overseerr may still be "
+            f"starting. Retrying in {delay}s."
+        )
+        time.sleep(delay)
+        delay = min(delay * 2, 30)
+
+
 def get_credentials() -> tuple:
     """
     Get Overseerr API credentials from configuration or user input.
-    
+
     Returns:
         tuple: Overseerr URL, API key, requester user ID
     """
     # Check for Docker environment variables first
-    url, api_key, user_id, _, _, _ = load_env_config()
-    
+    url, api_key, user_id = _load_env_config_with_retry()
+
     if url and api_key:
         logging.info("Using credentials from environment variables")
         return url, api_key, user_id
-    
+
     # Check for saved credentials
     url, api_key, user_id = load_config()
-    
+
     if url and api_key:
         logging.info("Using saved credentials")
         return url, api_key, user_id
-    
+
+    # Nothing configured and nobody to ask: prompting here raises EOFError and
+    # kills the process, which hides the real problem behind a stack trace.
+    if not _is_interactive():
+        logging.error(
+            "No usable Overseerr configuration and no terminal to prompt on. "
+            "Set OVERSEERR_URL and OVERSEERR_API_KEY, and make sure Overseerr is "
+            "reachable from this container."
+        )
+        sys.exit(1)
+
     # If no credentials found, prompt user for input
     print("\n🔑 No saved credentials found. Let's set up your Overseerr connection.")
     url = custom_input("Enter Overseerr URL (e.g. http://localhost:5055): ")
