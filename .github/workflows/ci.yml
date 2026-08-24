@@ -1,0 +1,87 @@
+name: Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    # Pinned rather than ubuntu-latest: setup-python has no 3.9 build for
+    # ubuntu-26.04, so this job would start failing the day ubuntu-latest
+    # moves on. Revisit when the project drops 3.9.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is what the Dockerfile ships and the floor in pyproject.toml.
+        # 3.13 catches standard-library removals before a release does - it is
+        # how the imghdr breakage in the image proxy was found.
+        python-version: ["3.9", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: tests/requirements.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tests/requirements.txt
+
+      - name: Show resolved versions
+        # On 3.9 pip picks older releases of fastapi and friends, so recording
+        # what was actually installed makes a version-specific failure legible.
+        run: pip list
+
+      - name: Run test suites
+        run: python tests/run_all.py
+
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Version matches .pre-commit-config.yaml so local and CI agree.
+      - name: Install ruff
+        run: pip install ruff==0.6.7
+
+      # The tree carries thousands of pre-existing findings under the config in
+      # pyproject.toml, so this reports instead of gating - turning it on as a
+      # gate today would just fail every pull request. --output-format=github
+      # annotates the diff, which puts findings on the lines a reviewer is
+      # already looking at, without blocking the merge.
+      - name: Report findings
+        run: ruff check --output-format=github --exit-zero .
+
+      - name: Summarise
+        if: always()
+        run: |
+          total=$(ruff check --output-format=concise --exit-zero . | wc -l)
+          echo "### Ruff: $total findings" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reported, not gated - the tree has pre-existing findings." >> "$GITHUB_STEP_SUMMARY"
+          echo "Findings on changed lines appear as annotations on the diff." >> "$GITHUB_STEP_SUMMARY"
