@@ -43,7 +43,7 @@ Docker installation provides the easiest setup with all dependencies pre-configu
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Woahai321/list-sync.git
+   git clone https://github.com/KaHooli/list-sync.git
    cd list-sync
    ```
 
@@ -231,7 +231,7 @@ brew install --cask google-chrome
 
 1. **Clone and setup**:
    ```bash
-   git clone https://github.com/Woahai321/list-sync.git
+   git clone https://github.com/KaHooli/list-sync.git
    cd list-sync
    ```
 

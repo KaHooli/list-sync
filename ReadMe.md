@@ -1,10 +1,10 @@
 <div align="center">
 
 ![ListSync Logo](https://s.2ya.me/api/shares/Ou6EHcqD/files/6db8707a-037e-46ed-bbfe-bcf35ba2b31c)
-![GitHub last commit](https://img.shields.io/github/last-commit/woahai321/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
-![GitHub issues](https://img.shields.io/github/issues/woahai321/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
-![GitHub stars](https://img.shields.io/github/stars/woahai321/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
-![GitHub release](https://img.shields.io/github/v/release/woahai321/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
+![GitHub last commit](https://img.shields.io/github/last-commit/KaHooli/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
+![GitHub issues](https://img.shields.io/github/issues/KaHooli/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
+![GitHub stars](https://img.shields.io/github/stars/KaHooli/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
+![GitHub release](https://img.shields.io/github/v/release/KaHooli/list-sync?style=for-the-badge&color=8b5cf6&labelColor=6b21a8&logo=github&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Ready-8b5cf6?style=for-the-badge&labelColor=6b21a8&logo=docker&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.7%2B-8b5cf6?style=for-the-badge&labelColor=6b21a8&logo=python&logoColor=white)
 [![Website](https://img.shields.io/badge/Website-soluify.com-8b5cf6?style=for-the-badge&labelColor=6b21a8&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAABKElEQVQ4jZXTMUoDQRQG4C+7YmFhYSHYWFgIHkAQPICFhYcQBEEQxGNYWHgIC0H0BsELWFhYWAQLC2GzxSzsLrOz2f0hMDDvzXvfzLz3ZkopKKMxxrjHJc7wjjd0UgpfZRYVgbM4P2AevZzEHlZwiU5KYa8QmMUNtnCMh5TCqCR0jgF6eEQfq1jHFfbRxHFKYVQQWMQIZxjGehObeEUH7ZTCJCcYx2Ub99jGEEtYwDnWsIk2LlIK/ZzALK7RwlKsPWMppfAc/m+0UwrTnKCBHt7iZnlp5/GCVkrhKyd4wg5WYv6NTkrhNSdoRd0b2Cg0z0dOcIj9uHnePG/+t/k3wR/kyUNUdQE+UAAAAABJRU5ErkJgg==)](https://soluify.com/)
@@ -80,7 +80,7 @@ docker run -d --name listsync -p 3222:3222 -p 4222:4222 -v listsync-data:/usr/sr
 
 ```bash
 # Clone and setup
-git clone https://github.com/Woahai321/list-sync.git && cd list-sync
+git clone https://github.com/KaHooli/list-sync.git && cd list-sync
 
 # (Optional: Configure a .env file)
 # Use pre-built image
@@ -108,7 +108,7 @@ docker-compose -f docker-compose.local.yml up -d --build
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Woahai321/list-sync.git
+git clone https://github.com/KaHooli/list-sync.git
 cd list-sync
 
 # 2. Copy and configure environment file
@@ -140,7 +140,7 @@ docker-compose -f docker-compose.core.yml logs -f
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/Woahai321/list-sync.git && cd list-sync
+git clone https://github.com/KaHooli/list-sync.git && cd list-sync
 pip install -r requirements.txt -r api_requirements.txt
 cd listsync-nuxt && npm install && cd ..
 ```
@@ -228,7 +228,7 @@ ListSync can use the official TMDB API for improved reliability and performance.
 3. Fill in the required fields:
    - **Application Name**: `ListSync` (or any name you prefer)
    - **Application Summary**: `Media list synchronization tool`
-   - **Application URL**: `https://github.com/Woahai321/list-sync`
+   - **Application URL**: `https://github.com/KaHooli/list-sync`
 4. Click **"Submit"**
 
 #### **Step 2: Get Your API Key**

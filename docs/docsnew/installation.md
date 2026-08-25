@@ -67,7 +67,7 @@ flowchart LR
 **Step-by-Step:**
 ```bash
 # 1. Clone and configure
-git clone https://github.com/Woahai321/list-sync.git
+git clone https://github.com/KaHooli/list-sync.git
 cd list-sync
 cp envsample.txt .env
 
@@ -146,7 +146,7 @@ Uses the pre-built image with web dashboard:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/Woahai321/list-sync.git
+git clone https://github.com/KaHooli/list-sync.git
 cd list-sync
 
 # 2. Configure environment
@@ -315,7 +315,7 @@ brew install --cask google-chrome
 #### Python Environment Setup
 ```bash
 # 1. Clone repository
-git clone https://github.com/Woahai321/list-sync.git
+git clone https://github.com/KaHooli/list-sync.git
 cd list-sync
 
 # 2. Create Python virtual environment

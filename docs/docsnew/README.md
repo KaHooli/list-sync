@@ -7,7 +7,7 @@ Welcome to the comprehensive documentation for ListSync - an automated media lis
 ### 30-Second Setup
 ```bash
 # 1. Clone and configure
-git clone https://github.com/Woahai321/list-sync.git
+git clone https://github.com/KaHooli/list-sync.git
 cd list-sync
 cp envsample.txt .env
 
