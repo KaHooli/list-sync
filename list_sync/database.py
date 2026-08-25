@@ -441,6 +441,7 @@ def init_database():
                 list_type TEXT,
                 list_id TEXT,
                 pid INTEGER,
+                last_heartbeat TIMESTAMP,
                 total_items INTEGER DEFAULT 0,
                 items_requested INTEGER DEFAULT 0,
                 items_skipped INTEGER DEFAULT 0,
@@ -448,6 +449,15 @@ def init_database():
                 error_message TEXT
             )
         ''')
+
+        # Running syncs bump last_heartbeat so an abandoned in_progress row can
+        # be told apart from one that is still working.
+        try:
+            cursor.execute('ALTER TABLE sync_history ADD COLUMN last_heartbeat TIMESTAMP')
+            logging.info("✅ Added last_heartbeat column to sync_history table")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         
         # Sync items table - tracks individual items processed during each sync
         cursor.execute('''
@@ -986,18 +996,121 @@ def start_sync_in_db(
         int: The sync_id (primary key) of the created sync record
     """
     import os
+
+    # A sync that died without cleaning up would otherwise leave its row
+    # in_progress forever, and the UI reports the newest such row as running.
+    try:
+        clear_stale_syncs()
+    except Exception as e:
+        logging.warning(f"Could not clear stale sync records before starting sync: {e}")
+
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO sync_history (
                 session_id, sync_type, in_progress, start_time,
-                list_type, list_id, pid, status
-            ) VALUES (?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, 'running')
+                list_type, list_id, pid, status, last_heartbeat
+            ) VALUES (?, ?, 1, CURRENT_TIMESTAMP, ?, ?, ?, 'running', CURRENT_TIMESTAMP)
         ''', (session_id, sync_type, list_type, list_id, pid or os.getpid()))
         sync_id = cursor.lastrowid
         conn.commit()
         logging.info(f"Started sync in database: session_id={session_id}, sync_id={sync_id}")
         return sync_id
+
+
+def heartbeat_sync_in_db(session_id: str) -> bool:
+    """
+    Mark a running sync as still alive.
+
+    Args:
+        session_id: Session identifier
+
+    Returns:
+        bool: True if the sync record was updated
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE sync_history
+            SET last_heartbeat = CURRENT_TIMESTAMP
+            WHERE session_id = ? AND in_progress = 1
+        ''', (session_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def cancel_sync_in_db(session_id: str) -> bool:
+    """
+    Mark a sync as cancelled and no longer in progress.
+
+    Args:
+        session_id: Session identifier
+
+    Returns:
+        bool: True if the sync record was updated
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE sync_history
+            SET in_progress = 0,
+                status = 'cancelled',
+                end_time = CURRENT_TIMESTAMP
+            WHERE session_id = ? AND in_progress = 1
+        ''', (session_id,))
+        updated = cursor.rowcount > 0
+        conn.commit()
+        if updated:
+            logging.info(f"Marked sync session {session_id} as cancelled in database")
+        return updated
+
+
+def clear_stale_syncs(stale_after_seconds: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Close out in-progress sync records whose sync is no longer running.
+
+    A sync killed mid-run - by a crash, a container restart, or a kill - never
+    reaches end_sync_in_db, so its row stays in_progress and the dashboard keeps
+    reporting "Sync in Progress" indefinitely. This closes those records.
+
+    Args:
+        stale_after_seconds: Override for how long a record may go untouched
+
+    Returns:
+        list: The records that were closed out, each with a 'reason'
+    """
+    from .utils.sync_status import get_sync_staleness_reason
+
+    cleared = []
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM sync_history WHERE in_progress = 1')
+        records = [dict(row) for row in cursor.fetchall()]
+
+        for record in records:
+            reason = get_sync_staleness_reason(record, stale_after_seconds=stale_after_seconds)
+            if not reason:
+                continue
+
+            cursor.execute('''
+                UPDATE sync_history
+                SET in_progress = 0,
+                    status = 'interrupted',
+                    end_time = COALESCE(end_time, CURRENT_TIMESTAMP),
+                    error_message = COALESCE(error_message, ?)
+                WHERE session_id = ? AND in_progress = 1
+            ''', (f"Sync did not finish: {reason}", record.get('session_id')))
+            if cursor.rowcount > 0:
+                record['reason'] = reason
+                cleared.append(record)
+                logging.warning(
+                    f"Cleared stale sync record {record.get('session_id')}: {reason}"
+                )
+
+        conn.commit()
+
+    return cleared
 
 
 def update_sync_lists_in_db(
@@ -1140,13 +1253,23 @@ def add_item_to_sync(
         return item_record_id
 
 
-def get_current_sync_status() -> Optional[Dict[str, Any]]:
+def get_current_sync_status(clear_stale: bool = True) -> Optional[Dict[str, Any]]:
     """
     Get the current in-progress sync status from database.
-    
+
+    Args:
+        clear_stale: Close out abandoned records first, so a sync that died
+            without cleaning up is never reported as the current one
+
     Returns:
         dict: Current sync status or None if no sync in progress
     """
+    if clear_stale:
+        try:
+            clear_stale_syncs()
+        except Exception as e:
+            logging.warning(f"Could not clear stale sync records: {e}")
+
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()

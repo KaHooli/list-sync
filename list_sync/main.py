@@ -23,7 +23,8 @@ from .database import (
     init_database, load_list_ids, save_list_id, delete_list,
     load_sync_interval, configure_sync_interval, should_sync_item,
     save_sync_result, update_list_item_count, update_list_sync_info, DB_FILE,
-    start_sync_in_db, end_sync_in_db, add_item_to_sync, update_sync_lists_in_db
+    start_sync_in_db, end_sync_in_db, add_item_to_sync, update_sync_lists_in_db,
+    cancel_sync_in_db
 )
 from .notifications.discord import send_to_discord_webhook
 from .providers import get_provider, get_available_providers, SyncCancelledException
@@ -43,6 +44,7 @@ from .utils.sync_status import (
     get_pause_until,
     clear_pause_until,
     set_pause_until,
+    start_sync_heartbeat,
 )
 # Removed in-memory sync tracker - now using database-based tracking
 
@@ -71,22 +73,12 @@ def _handle_termination_signal(signum, frame):
             except Exception:
                 pass
         
-        # Update database to mark sync as cancelled
+        # Update database to mark sync as cancelled. This has to clear
+        # in_progress as well, or the dashboard keeps reporting the cancelled
+        # sync as running for as long as the record survives.
         if session_id:
             try:
-                import sqlite3
-                from .database import DB_FILE
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE sync_history 
-                    SET status = 'cancelled',
-                        end_time = CURRENT_TIMESTAMP
-                    WHERE session_id = ? AND status = 'running'
-                """, (session_id,))
-                conn.commit()
-                conn.close()
-                logging.info(f"Marked sync session {session_id} as cancelled in database (signal handler)")
+                cancel_sync_in_db(session_id)
             except Exception as e:
                 logging.error(f"Error updating database in signal handler: {e}")
         
@@ -158,19 +150,7 @@ def handle_cancellation(sync_tracker, session_id: Optional[str] = None):
     # Update database if session_id provided
     if session_id:
         try:
-            import sqlite3
-            from .database import DB_FILE
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE sync_history 
-                SET status = 'cancelled',
-                    end_time = CURRENT_TIMESTAMP
-                WHERE session_id = ? AND status = 'running'
-            """, (session_id,))
-            conn.commit()
-            conn.close()
-            logging.info(f"Marked sync session {session_id} as cancelled in database")
+            cancel_sync_in_db(session_id)
         except Exception as e:
             logging.error(f"Error updating database for cancelled sync: {e}")
 
@@ -1530,14 +1510,19 @@ def run_sync(
     # Store session ID globally for signal handlers
     _current_sync_session_id = session_id
     
+    heartbeat = None
     try:
         # Track sync start in database
         sync_id = start_sync_in_db(session_id=session_id, sync_type='full')
-        
+
+        # Keep the database record marked as alive for as long as this sync
+        # runs, so a sync that dies mid-run can be told apart from a live one.
+        heartbeat = start_sync_heartbeat(session_id)
+
         # Register subprocess PID in tracker for immediate termination
         sync_tracker = get_sync_tracker()
         sync_tracker.set_subprocess_pid(os.getpid())
-        
+
         # Log sync start with clear marker
         sync_start_marker = f"========== SYNC START [FULL] - Session: {session_id} =========="
         logging.info(sync_start_marker)
@@ -1603,22 +1588,40 @@ def run_sync(
         if not dry_run:
             send_to_discord_webhook(summary_text, sync_results, automated=automated_mode)
         
+        # A cancelled sync must not be recorded as a successful one
+        cancelled = getattr(sync_results, 'cancelled', False)
+        final_status = 'cancelled' if cancelled else 'completed'
+
         # Log sync complete with clear marker
-        sync_end_marker = f"========== SYNC COMPLETE [FULL] - Session: {session_id} - Status: SUCCESS =========="
+        sync_end_marker = f"========== SYNC COMPLETE [FULL] - Session: {session_id} - Status: {'CANCELLED' if cancelled else 'SUCCESS'} =========="
         logging.info(sync_end_marker)
         print(color_gradient(f"\n{sync_end_marker}", "#00ff00", "#00aa00"))
-        
+
         # Mark sync as ended in database
         end_sync_in_db(
             session_id=session_id,
-            status='completed',
+            status=final_status,
             total_items=sync_results.total_items,
             items_requested=sync_results.results.get('requested', 0),
             items_skipped=sync_results.results.get('skipped', 0),
             items_errors=sync_results.results.get('error', 0)
         )
-        
+
+    except Exception as e:
+        # Without this the sync record stays in_progress forever and every
+        # dashboard reports "Sync in Progress" until the record is cleared.
+        logging.error(f"Full sync failed for session {session_id}: {e}")
+        sync_end_marker = f"========== SYNC COMPLETE [FULL] - Session: {session_id} - Status: ERROR =========="
+        logging.info(sync_end_marker)
+        try:
+            end_sync_in_db(session_id=session_id, status='failed', error_message=str(e))
+        except Exception as db_error:
+            logging.error(f"Could not mark failed sync as ended: {db_error}")
+        raise
+
     finally:
+        if heartbeat is not None:
+            heartbeat.stop()
         # Clear global session ID to prevent zombie cancellation state
         _current_sync_session_id = None
 
@@ -1648,21 +1651,24 @@ def sync_single_list(
         Dict[str, Any]: Sync results
     """
     global _current_sync_session_id
-    
+
+    session_id = None
+    heartbeat = None
+
     try:
         # Set up signal handlers for immediate termination support
         setup_sync_signal_handlers()
-        
+
         # Check and rotate logs if necessary before starting sync
         check_and_rotate_logs()
-        
+
         # Generate unique session ID for this sync
         import uuid
         session_id = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
-        
+
         # Store session ID globally for signal handlers
         _current_sync_session_id = session_id
-        
+
         try:
             # Track sync start in database
             sync_id = start_sync_in_db(
@@ -1671,11 +1677,15 @@ def sync_single_list(
                 list_type=list_type,
                 list_id=list_id
             )
-            
+
+            # Keep the database record marked as alive for as long as this sync
+            # runs, so a sync that dies mid-run can be told apart from a live one.
+            heartbeat = start_sync_heartbeat(session_id)
+
             # Register subprocess PID in tracker for immediate termination
             sync_tracker = get_sync_tracker()
             sync_tracker.set_subprocess_pid(os.getpid())
-            
+
             # Log sync start with clear marker
             sync_start_marker = f"========== SYNC START [SINGLE] - Session: {session_id} - List: {list_type}:{list_id} =========="
             logging.info(sync_start_marker)
@@ -1787,30 +1797,28 @@ def sync_single_list(
             return result
         
         finally:
+            if heartbeat is not None:
+                heartbeat.stop()
             # Clear global session ID to prevent zombie cancellation state
             _current_sync_session_id = None
-            
+
     except Exception as e:
         error_message = f"Error in single list sync for {list_type}:{list_id}: {str(e)}"
         logging.error(error_message)
         print(color_gradient(f"❌  {error_message}", "#ff0000", "#aa0000"))
-        
-        # Mark sync as ended in database (even on error)
-        try:
-            end_sync_in_db(session_id=session_id, status='failed', error_message=str(e))
-        except:
-            pass
-        
+
+        # Mark sync as ended in database (even on error), otherwise the record
+        # stays in_progress and the dashboard reports a sync that is not running
+        if session_id:
+            try:
+                end_sync_in_db(session_id=session_id, status='failed', error_message=str(e))
+            except Exception as db_error:
+                logging.error(f"Could not mark failed sync as ended: {db_error}")
+
         # Log sync complete with error marker
-        # Need to generate session_id if we haven't yet (error before session_id creation)
-        try:
-            import uuid
-            session_id = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
-            sync_end_marker = f"========== SYNC COMPLETE [SINGLE] - Session: {session_id} - List: {list_type}:{list_id} - Status: ERROR =========="
-            logging.info(sync_end_marker)
-        except:
-            pass
-        
+        sync_end_marker = f"========== SYNC COMPLETE [SINGLE] - Session: {session_id or 'unknown'} - List: {list_type}:{list_id} - Status: ERROR =========="
+        logging.info(sync_end_marker)
+
         return {
             "success": False,
             "message": error_message,

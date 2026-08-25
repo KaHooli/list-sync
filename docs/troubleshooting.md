@@ -385,6 +385,35 @@ flowchart TD
    docker-compose logs | grep -i "selenium\|chrome\|webdriver"
    ```
 
+### Stuck on "Sync in Progress"
+
+**Symptoms**: Every list card shows "Sync in Progress..." with the sync button
+disabled, and the sidebar reads "Syncing all", long after the lists finished
+syncing. Nothing clears it short of restarting the container.
+
+**Cause**: A sync that dies without finishing - a crash, a kill, a container
+restart mid-run - leaves its record in the database marked as in progress, and
+the dashboard reports that record as a running sync.
+
+**What happens now**: A running sync updates a heartbeat every 30 seconds. A
+record that stops being updated is closed out automatically as `interrupted`,
+so the dashboard returns to idle within about 15 minutes of the sync dying, and
+immediately when the process that owned it is gone.
+
+**Checking it**:
+
+```bash
+# Should read "is_running": false when no sync is running
+curl -s http://localhost:4222/api/sync/status/live
+
+# Records closed out automatically are logged
+docker-compose logs listsync-full | grep -i "stale sync record"
+```
+
+**Tuning**: Set `LISTSYNC_SYNC_STALE_MINUTES` to change how long a sync may go
+silent before its record is closed out. The default of 15 minutes suits most
+setups; raise it only if you see live syncs being marked interrupted.
+
 ### Slow Sync Performance
 
 **Symptoms**: Syncs take very long time to complete
