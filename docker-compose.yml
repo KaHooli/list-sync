@@ -1,6 +1,9 @@
 services:
   listsync-full:
-    image: ghcr.io/woahai321/list-sync:main
+    # This fork publishes its own image from .github/workflows/docker-build.yml
+    # on every push to main. Pointing at upstream here would run upstream's
+    # code, without any of the fixes in this repository.
+    image: ghcr.io/kahooli/list-sync:main
     container_name: listsync-full
     ports:
       # Frontend (Nuxt 3 Dashboard) 
