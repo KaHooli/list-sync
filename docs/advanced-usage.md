@@ -27,7 +27,7 @@ version: "3.8"
 
 services:
   listsync-main:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     container_name: listsync-main
     environment:
       - OVERSEERR_URL=https://overseerr.example.com
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   listsync-4k:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     container_name: listsync-4k
     environment:
       - OVERSEERR_URL=https://overseerr-4k.example.com
@@ -55,7 +55,7 @@ services:
     restart: unless-stopped
 
   listsync-tv:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     container_name: listsync-tv
     environment:
       - OVERSEERR_URL=https://overseerr-tv.example.com
@@ -79,7 +79,7 @@ version: "3.8"
 
 services:
   listsync-us:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=https://us-overseerr.example.com
       - OVERSEERR_API_KEY=${US_API_KEY}
@@ -90,7 +90,7 @@ services:
       - ./data-us:/usr/src/app/data
 
   listsync-eu:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=https://eu-overseerr.example.com
       - OVERSEERR_API_KEY=${EU_API_KEY}
@@ -108,7 +108,7 @@ Distribute load across multiple providers:
 ```yaml
 services:
   listsync-imdb:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=${OVERSEERR_URL}
       - OVERSEERR_API_KEY=${API_KEY}
@@ -119,7 +119,7 @@ services:
       - ./data-imdb:/usr/src/app/data/logs
 
   listsync-trakt:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=${OVERSEERR_URL}
       - OVERSEERR_API_KEY=${API_KEY}
@@ -251,7 +251,7 @@ while read path action file; do
     docker run --rm \
         --env-file .env \
         -v "$(pwd)/data:/usr/src/app/data" \
-        ghcr.io/woahai321/list-sync:main \
+        ghcr.io/kahooli/list-sync:main \
         python -c "
 from list_sync.main import run_sync
 from list_sync.config import load_env_config
@@ -673,7 +673,7 @@ version: "3.8"
 
 services:
   listsync:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=${OVERSEERR_URL}
       - OVERSEERR_API_KEY=${API_KEY}
@@ -713,7 +713,7 @@ version: "3.8"
 
 services:
   listsync:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     
     # Run as non-root user
     user: "1000:1000"
@@ -806,7 +806,7 @@ services:
       - backend
 
   listsync:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     networks:
       - backend  # No direct external access
     environment:

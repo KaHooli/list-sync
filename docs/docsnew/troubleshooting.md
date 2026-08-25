@@ -1074,7 +1074,7 @@ docker inspect listsync-full
 docker-compose up
 
 # Or run bash to debug
-docker run -it --entrypoint bash ghcr.io/woahai321/list-sync:main
+docker run -it --entrypoint bash ghcr.io/kahooli/list-sync:main
 ```
 
 **3. Check Resource Limits**

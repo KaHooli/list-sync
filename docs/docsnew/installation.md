@@ -450,7 +450,7 @@ version: "3.8"
 
 services:
   listsync-main:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     container_name: listsync-main
     environment:
       - OVERSEERR_URL=https://overseerr.example.com
@@ -463,7 +463,7 @@ services:
     restart: unless-stopped
 
   listsync-4k:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     container_name: listsync-4k
     environment:
       - OVERSEERR_URL=https://overseerr-4k.example.com
@@ -485,7 +485,7 @@ version: "3.8"
 
 services:
   listsync-us:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=https://us-overseerr.example.com
       - OVERSEERR_API_KEY=${US_API_KEY}
@@ -496,7 +496,7 @@ services:
       - ./data-us:/usr/src/app/data
 
   listsync-eu:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=https://eu-overseerr.example.com
       - OVERSEERR_API_KEY=${EU_API_KEY}
@@ -514,7 +514,7 @@ version: "3.8"
 
 services:
   listsync-imdb:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=${OVERSEERR_URL}
       - OVERSEERR_API_KEY=${API_KEY}
@@ -525,7 +525,7 @@ services:
       - ./data-imdb:/usr/src/app/data/logs
 
   listsync-trakt:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=${OVERSEERR_URL}
       - OVERSEERR_API_KEY=${API_KEY}
