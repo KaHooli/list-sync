@@ -16,7 +16,7 @@
 
 ## 🍿 What is ListSync? 
 
-ListSync automatically syncs your watchlists from IMDb, Trakt and many more with Overseerr/Jellyseerr. No more manual adding - just add movies, shows, and anime to your favorite watchlist, and they'll appear in your media server automatically.
+ListSync automatically syncs your watchlists from IMDb, Trakt and many more with Seerr. No more manual adding - just add movies, shows, and anime to your favorite watchlist, and they'll appear in your media server automatically.
 
 <div align="center">
 
@@ -113,7 +113,7 @@ cd list-sync
 
 # 2. Copy and configure environment file
 cp .env.example .env
-nano .env  # Add your Overseerr URL, API key, and lists
+nano .env  # Add your Seerr URL, API key, and lists
 
 # 3. Start with the core docker-compose file
 docker-compose -f docker-compose.core.yml up -d
@@ -386,7 +386,7 @@ These special lists sync a configurable number of items (default: 20, can be set
 - ✅ **Dropped** - Dropped anime
 - ✅ **Custom Lists** - User-created custom lists
 
-**Note**: Anime titles are automatically resolved to TMDB IDs via Trakt API for Overseerr compatibility. Resolution works with both English and Romaji titles.
+**Note**: Anime titles are automatically resolved to TMDB IDs via Trakt API for Seerr compatibility. Resolution works with both English and Romaji titles.
 </details>
 
 <details>
@@ -440,8 +440,8 @@ This will be recognized as the Steven Lu Popular Movies list.
 All you need is a `.env` file with four settings:
 
 ```bash
-OVERSEERR_URL=http://your-overseerr:5055    # Your Overseerr/Jellyseerr URL
-OVERSEERR_API_KEY=your-api-key-here         # Get from Overseerr Settings → General
+OVERSEERR_URL=http://your-overseerr:5055    # Your Seerr URL
+OVERSEERR_API_KEY=your-api-key-here         # Get from Seerr Settings → General
 TRAKT_CLIENT_ID=your-api-key-here           # Trakt API Client ID
 IMDB_LISTS=top                              # Start with IMDb Top 250
 ```
@@ -613,13 +613,13 @@ environment:
 
 SeerrBridge is our companion application that provides an alternative to traditional \*arr stack (Radarr/Sonarr) setup. It works alongside ListSync to create a complete media management solution:
 
-- **Automated Processing**: When ListSync adds requests to Jellyseerr/Overseerr, SeerrBridge automatically processes them
+- **Automated Processing**: When ListSync adds requests to Seerr, SeerrBridge automatically processes them
 - **Browser Automation**: Uses Selenium to automate media fetching through Debrid Media Manager
 - **Simplified Setup**: Eliminates the need for complex \*arr stack configuration
 
 #### How ListSync & SeerrBridge Work Together
 
-1. ListSync adds media requests to Jellyseerr/Overseerr
+1. ListSync adds media requests to Seerr
 2. SeerrBridge detects the requests via webhook
 3. SeerrBridge automatically processes the requests through DMM
 4. Media becomes available in your RD library
@@ -673,14 +673,14 @@ graph LR
     subgraph pipe["Processing Pipeline"]
         P --> E["🔍 Extract Data\n(Title, Year, ID)"]
         E --> De["🔄 Deduplicate\n(IMDb ID)"]
-        De --> Se["🔎 Search Overseerr\n(Fuzzy Match)"]
+        De --> Se["🔎 Search Seerr\n(Fuzzy Match)"]
         Se --> Ch["✅ Check Status\n(Available?)"]
         Ch --> R["🍿 Create Requests\n(Movies, Seasons)"]
     end
 
     %% Output
     subgraph out["Output & Storage"]
-        R --> O["🎯 Overseerr\n(Media Requests)"]
+        R --> O["🎯 Seerr\n(Media Requests)"]
         R --> DB
     end
 
@@ -722,7 +722,7 @@ For a detailed technical breakdown, see our [Architecture Documentation](/docs/a
 If you encounter any issues while using ListSync, please check our [Troubleshooting Guide](/docs/troubleshooting.md) for solutions to common problems.
 
 **Quick Fixes:**
-- **Sync not working?** Check your Overseerr API key and URL
+- **Sync not working?** Check your Seerr API key and URL
 - **Lists not loading?** Verify list URLs are public and accessible
 - **Docker issues?** Ensure ports 3222 and 4222 are available
 - **Need help?** Join our [Discord community](https://discord.gg/Dy5xNzEHKw) for support

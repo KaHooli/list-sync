@@ -282,7 +282,7 @@ export const useCollectionsStore = defineStore('collections', {
     },
 
     /**
-     * Sync collection to Overseerr - uses same flow as list syncs
+     * Sync collection to Seerr - uses same flow as list syncs
      */
     async syncCollection(franchiseName: string) {
       this.syncing = true

@@ -22,7 +22,7 @@ This comprehensive guide covers all aspects of using ListSync, from initial setu
 flowchart TD
     Start[Start ListSync Setup] --> CheckReq[Check Prerequisites]
     CheckReq --> Prereq{Prerequisites Met?}
-    Prereq -->|No| InstallReq[Install Prerequisites<br/>- Docker & Docker Compose<br/>- Overseerr running<br/>- Internet connection]
+    Prereq -->|No| InstallReq[Install Prerequisites<br/>- Docker & Docker Compose<br/>- Seerr running<br/>- Internet connection]
     Prereq -->|Yes| CloneRepo[Clone Repository]
     
     InstallReq --> CloneRepo
@@ -64,9 +64,9 @@ flowchart TD
 - [ ] 1GB free disk space
 - [ ] Internet connection for list fetching
 
-**Overseerr Setup:**
-- [ ] Overseerr instance running and accessible
-- [ ] API key obtained from Overseerr settings
+**Seerr Setup:**
+- [ ] Seerr instance running and accessible
+- [ ] API key obtained from Seerr settings
 - [ ] User ID identified for making requests
 - [ ] Network connectivity confirmed
 
@@ -137,7 +137,7 @@ graph TB
     History --> FailedItems[Failed Items]
     History --> ProcessedItems[Processed Items]
     
-    Settings --> OverseerrConfig[Overseerr Configuration]
+    Settings --> OverseerrConfig[Seerr Configuration]
     Settings --> NotificationSettings[Notification Settings]
     Settings --> SyncSettings[Sync Settings]
     Settings --> ThemeSettings[Theme Settings]
@@ -250,7 +250,7 @@ IMDB_LISTS=https://www.imdb.com/list/ls123456789
 **Configuration Options:**
 - Auto-sync: Include in automated sync cycles
 - Priority: High, Normal, Low sync priority
-- 4K Requests: Send requests as 4K to Overseerr
+- 4K Requests: Send requests as 4K to Seerr
 - Item Limit: Maximum items to sync (optional)
 
 #### Trakt Lists
@@ -464,7 +464,7 @@ graph TB
 #### Key Performance Indicators
 - **Average Sync Time** - Time per sync operation
 - **Items Per Hour** - Processing rate
-- **API Response Time** - Overseerr API performance
+- **API Response Time** - Seerr API performance
 - **Error Rate** - Failure percentage
 - **Success Rate** - Overall success percentage
 
@@ -502,7 +502,7 @@ SMTP_PASSWORD=your-app-password
 
 #### Core Settings
 ```bash
-# Overseerr/Jellyseerr Connection
+# Seerr Connection
 OVERSEERR_URL=http://your-overseerr-url:5055
 OVERSEERR_API_KEY=your-api-key-here
 OVERSEERR_USER_ID=1
@@ -532,7 +532,7 @@ STEVENLU_LISTS=stevenlu
 ### Web-based Configuration
 
 #### Settings Interface
-- **Connection Settings** - Overseerr/Jellyseerr configuration
+- **Connection Settings** - Seerr configuration
 - **Sync Settings** - Intervals and automation
 - **Provider Settings** - List configuration
 - **Notification Settings** - Discord/email setup
@@ -574,7 +574,7 @@ docker-compose restart
 
 ### Multi-Instance Deployments
 
-#### Scenario: Multiple Overseerr Instances
+#### Scenario: Multiple Seerr Instances
 ```yaml
 # docker-compose-multi.yml
 version: "3.8"
@@ -657,8 +657,8 @@ def sync_plex_watchlist_to_overseerr():
 | Issue | Quick Fix | Full Guide |
 |-------|-----------|------------|
 | **Can't access dashboard** | Check port 3222, restart container | [Web Interface Issues](#web-interface-issues) |
-| **Sync not working** | Check Overseerr connection, verify lists | [Sync Issues](#sync-issues) |
-| **All items "already available"** | Check 4K settings, verify Overseerr | [Already Available Issue](#already-available-issue) |
+| **Sync not working** | Check Seerr connection, verify lists | [Sync Issues](#sync-issues) |
+| **All items "already available"** | Check 4K settings, verify Seerr | [Already Available Issue](#already-available-issue) |
 | **High memory usage** | Reduce list limits, increase sync interval | [Performance Issues](#performance-issues) |
 | **Container won't start** | Check port conflicts, permissions | [Docker Issues](#docker-issues) |
 

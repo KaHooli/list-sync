@@ -356,9 +356,9 @@
                     @click="openOverseerr(item.overseerr_url)"
                   >
                     <ExternalLinkIcon :size="16" class="mr-1" />
-                    View in Overseerr
+                    View in Seerr
                   </Button>
-                  <span v-else class="text-xs text-muted-foreground">Not in Overseerr</span>
+                  <span v-else class="text-xs text-muted-foreground">Not in Seerr</span>
                 </div>
               </td>
             </tr>
@@ -1068,7 +1068,7 @@ const loadPreviousPage = async () => {
 // Export to CSV
 const exportToCSV = () => {
   try {
-    const headers = ['Title', 'Type', 'Year', 'Status', 'IMDb ID', 'Overseerr ID', 'List Name']
+    const headers = ['Title', 'Type', 'Year', 'Status', 'IMDb ID', 'Seerr ID', 'List Name']
     const rows = items.value.map(item => [
       item.title,
       item.media_type,
@@ -1098,10 +1098,10 @@ const exportToCSV = () => {
   }
 }
 
-// Open Overseerr
+// Open Seerr
 const openOverseerr = (url: string) => {
   if (!url) {
-    showError('Cannot open Overseerr', 'Overseerr URL is not available for this item')
+    showError('Cannot open Seerr', 'Seerr URL is not available for this item')
     return
   }
   window.open(url, '_blank', 'noopener,noreferrer')

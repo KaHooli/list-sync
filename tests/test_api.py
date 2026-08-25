@@ -21,7 +21,7 @@ lg.DATA_DIR = tmp
 import list_sync.database as db
 db.DB_FILE = os.path.join(tmp, "list_sync.db")
 db.init_database()
-db.save_overseerr_users([
+db.save_seerr_users([
     {"id": 1, "display_name": "Admin", "email": "a@x", "avatar": ""},
     {"id": 7, "display_name": "Jess", "email": "j@x", "avatar": ""},
 ])

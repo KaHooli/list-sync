@@ -121,7 +121,7 @@
                   </div>
                 </div>
 
-                <!-- View in Overseerr -->
+                <!-- View in Seerr -->
                 <Button
                   v-if="item.overseerr_url"
                   variant="ghost"
@@ -254,7 +254,7 @@ const debouncedSearch = useDebounceFn(() => {
   fetchItems()
 }, 500)
 
-// Open Overseerr
+// Open Seerr
 const openOverseerr = (url: string) => {
   window.open(url, '_blank')
 }

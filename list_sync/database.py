@@ -14,7 +14,7 @@ from .utils.logger import DATA_DIR
 # Define database file path
 DB_FILE = os.path.join(DATA_DIR, "list_sync.db")
 
-# Default Overseerr requester when a list has no user assigned (admin account)
+# Default Seerr requester when a list has no user assigned (admin account)
 DEFAULT_REQUESTER_USER_ID = "1"
 
 
@@ -481,7 +481,7 @@ def init_database():
             # Indexes might already exist
             pass
 
-        # Overseerr users table - stores synced Overseerr users
+        # Seerr users table - stores synced Seerr users
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS overseerr_users (
                 id TEXT PRIMARY KEY,
@@ -620,7 +620,7 @@ def save_list_id(list_id: str, list_type: str, list_url: Optional[str] = None, i
 
 def get_list_user_id(list_type: str, list_id: str) -> Optional[str]:
     """
-    Get the Overseerr user a list requests as.
+    Get the Seerr user a list requests as.
 
     Args:
         list_type (str): Type of list
@@ -644,12 +644,12 @@ def get_list_user_id(list_type: str, list_id: str) -> Optional[str]:
 
 def update_list_user_id(list_type: str, list_id: str, user_id: str) -> bool:
     """
-    Reassign which Overseerr user a list requests as.
+    Reassign which Seerr user a list requests as.
 
     Args:
         list_type (str): Type of list
         list_id (str): List ID or URL in any form
-        user_id (str): Overseerr user ID to request as
+        user_id (str): Seerr user ID to request as
 
     Returns:
         bool: True if a list was updated, False if no matching list exists
@@ -663,7 +663,7 @@ def update_list_user_id(list_type: str, list_id: str, user_id: str) -> bool:
 
         for rowid, stored_id in rows:
             cursor.execute("UPDATE lists SET user_id = ? WHERE rowid = ?", (str(user_id), rowid))
-            logging.info(f"List {list_type}:{stored_id} will now request as Overseerr user {user_id}")
+            logging.info(f"List {list_type}:{stored_id} will now request as Seerr user {user_id}")
         conn.commit()
         return True
 
@@ -794,7 +794,7 @@ def save_sync_result(title: str, media_type: str, imdb_id: Optional[str], overse
         title: Media title
         media_type: Media type (movie/tv)
         imdb_id: IMDb ID
-        overseerr_id: Overseerr ID
+        overseerr_id: Seerr ID
         status: Sync status
         year: Release year
         tmdb_id: TMDB ID
@@ -1121,7 +1121,7 @@ def add_item_to_sync(
         year: Release year
         imdb_id: IMDB ID
         tmdb_id: TMDB ID
-        overseerr_id: Overseerr ID
+        overseerr_id: Seerr ID
     
     Returns:
         int: The sync_items record ID
@@ -1380,13 +1380,17 @@ def count_settings() -> int:
 
 
 # ============================================================================
-# Overseerr Users Management
+# Seerr Users Management
 # ============================================================================
 
-def save_overseerr_users(users: List[Dict[str, Any]]):
+def save_seerr_users(users: List[Dict[str, Any]]):
     """
-    Save Overseerr users to database, replacing existing users.
-    
+    Save Seerr users to database, replacing existing users.
+
+    The table is still called overseerr_users: renaming it would need a
+    migration on every existing install, which buys nothing since the name
+    never leaves this file.
+
     Args:
         users: List of user dictionaries with keys: id, display_name, email, avatar
     """
@@ -1409,12 +1413,12 @@ def save_overseerr_users(users: List[Dict[str, Any]]):
             ))
         
         conn.commit()
-        logging.info(f"Saved {len(users)} Overseerr users to database")
+        logging.info(f"Saved {len(users)} Seerr users to database")
 
 
-def get_overseerr_users() -> List[Dict[str, Any]]:
+def get_seerr_users() -> List[Dict[str, Any]]:
     """
-    Get all Overseerr users from database.
+    Get all Seerr users from database.
     
     Returns:
         List of user dictionaries with keys: id, display_name, email, avatar, last_synced
@@ -1442,7 +1446,7 @@ def get_overseerr_users() -> List[Dict[str, Any]]:
 
 def get_overseerr_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     """
-    Get a specific Overseerr user by ID.
+    Get a specific Seerr user by ID.
     
     Args:
         user_id: User ID to lookup
@@ -1471,13 +1475,13 @@ def get_overseerr_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def clear_overseerr_users():
-    """Clear all Overseerr users from database."""
+def clear_seerr_users():
+    """Clear all Seerr users from database."""
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM overseerr_users")
         conn.commit()
-        logging.info("Cleared all Overseerr users from database")
+        logging.info("Cleared all Seerr users from database")
 
 
 def save_collection_sync_result(franchise_name: str, item_count: Optional[int] = None):

@@ -1,6 +1,6 @@
 # Architecture Overview
 
-ListSync is a multi-component application designed to automatically synchronize media watchlists from various online platforms to media request services like Overseerr and Jellyseerr. This document outlines the technical architecture, components, and data flows.
+ListSync is a multi-component application designed to automatically synchronize media watchlists from various online platforms to media request services like Seerr. This document outlines the technical architecture, components, and data flows.
 
 ## System Architecture
 
@@ -28,7 +28,7 @@ graph TB
         Letterboxd[Letterboxd Lists]
         MDBList[MDBList]
         StevenLu[Steven Lu Lists]
-        Overseerr[Overseerr/Jellyseerr]
+        Seerr[Seerr]
         DiscordWebhook[Discord Webhooks]
     end
     
@@ -37,7 +37,7 @@ graph TB
     Selenium --> Letterboxd
     Selenium --> MDBList
     CoreSync --> StevenLu
-    CoreSync --> Overseerr
+    CoreSync --> Seerr
     Discord --> DiscordWebhook
     
     style Frontend fill:#42b883
@@ -62,7 +62,7 @@ The main Python application that handles list synchronization operations.
 - Automated sync scheduling (configurable intervals from 30 minutes to 24+ hours)
 - Web scraping using SeleniumBase with Chrome WebDriver
 - Data extraction from multiple list providers
-- Request management with Overseerr/Jellyseerr API
+- Request management with Seerr API
 - Error handling and retry logic
 - Notification dispatch
 
@@ -176,7 +176,7 @@ graph TD
     B --> C[Initialize Providers]
     C --> D[Fetch Lists]
     D --> E[Parse Media Items]
-    E --> F[Check Overseerr Status]
+    E --> F[Check Seerr Status]
     F --> G{Item Exists?}
     G -->|No| H[Request via API]
     G -->|Yes| I[Update Status]
@@ -198,7 +198,7 @@ sequenceDiagram
     participant API as FastAPI Backend
     participant Core as Core Sync Service
     participant DB as SQLite Database
-    participant Overseerr
+    participant Seerr
     
     User->>Nuxt: Access Dashboard
     Nuxt->>API: GET /api/system/health
@@ -213,8 +213,8 @@ sequenceDiagram
     Core->>DB: Load Lists
     DB-->>Core: Return Lists
     Core->>Core: Fetch Media Items
-    Core->>Overseerr: Request Media
-    Overseerr-->>Core: Confirmation
+    Core->>Seerr: Request Media
+    Seerr-->>Core: Confirmation
     Core->>DB: Save Results
     DB-->>Core: Saved
     Core-->>API: Sync Complete
@@ -303,7 +303,7 @@ Multi-endpoint health checks:
 ### Authentication & Authorization
 
 - **Environment-based Configuration** - Sensitive data via environment variables
-- **API Key Management** - Secure storage of Overseerr API keys
+- **API Key Management** - Secure storage of Seerr API keys
 - **CORS Configuration** - Controlled cross-origin access
 - **Input Validation** - Pydantic models for API validation
 

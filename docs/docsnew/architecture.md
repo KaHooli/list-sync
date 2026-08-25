@@ -43,7 +43,7 @@ graph TB
         Letterboxd[Letterboxd Lists]
         MDBList[MDBList]
         StevenLu[Steven Lu Lists]
-        Overseerr[Overseerr/Jellyseerr]
+        Seerr[Seerr]
         DiscordWebhook[Discord Webhooks]
     end
     
@@ -52,7 +52,7 @@ graph TB
     Selenium --> Letterboxd
     Selenium --> MDBList
     CoreSync --> StevenLu
-    CoreSync --> Overseerr
+    CoreSync --> Seerr
     Discord --> DiscordWebhook
     
     style Frontend fill:#42b883
@@ -96,7 +96,7 @@ graph TB
     subgraph "Core Layer"
         SyncEngine[Sync Engine]
         Providers[Provider System]
-        OverseerrClient[Overseerr Client]
+        OverseerrClient[Seerr Client]
         NotificationService[Notification Service]
     end
     
@@ -135,7 +135,7 @@ graph TB
 **Key Responsibilities**:
 - List fetching and processing
 - Media item resolution and matching
-- Overseerr API integration
+- Seerr API integration
 - Database operations
 - Error handling and retry logic
 
@@ -416,7 +416,7 @@ sequenceDiagram
     participant API
     participant SyncEngine
     participant Providers
-    participant Overseerr
+    participant Seerr
     participant Database
     
     User->>Frontend: Trigger Sync
@@ -431,12 +431,12 @@ sequenceDiagram
         Providers-->>SyncEngine: Return Items
         
         loop For Each Item
-            SyncEngine->>Overseerr: Check Item Status
-            Overseerr-->>SyncEngine: Return Status
+            SyncEngine->>Seerr: Check Item Status
+            Seerr-->>SyncEngine: Return Status
             
             alt Item Not Available
-                SyncEngine->>Overseerr: Request Item
-                Overseerr-->>SyncEngine: Confirmation
+                SyncEngine->>Seerr: Request Item
+                Seerr-->>SyncEngine: Confirmation
             end
             
             SyncEngine->>Database: Save Item Status
@@ -477,7 +477,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[Sync Media to Overseerr] --> B[Check Media Status]
+    A[Sync Media to Seerr] --> B[Check Media Status]
     B --> C{Already Available?}
     C -->|Yes| D[Mark as Available]
     C -->|No| E{Already Requested?}
@@ -575,8 +575,8 @@ graph TB
     end
     
     subgraph "Shared Services"
-        Overseerr1[Overseerr Instance 1]
-        Overseerr2[Overseerr Instance 2]
+        Overseerr1[Seerr Instance 1]
+        Overseerr2[Seerr Instance 2]
         Monitoring[Monitoring Stack]
     end
     
@@ -909,7 +909,7 @@ provider_duration_seconds = Histogram('provider_duration_seconds', 'Provider req
 #### Business Metrics
 - **Sync Success Rate**: Percentage of successful sync operations
 - **Items Processed**: Total items processed per provider
-- **Request Success Rate**: Percentage of successful Overseerr requests
+- **Request Success Rate**: Percentage of successful Seerr requests
 - **Average Processing Time**: Time per item processed
 - **Error Rate**: Percentage of operations with errors
 
@@ -971,8 +971,8 @@ graph TB
     end
     
     subgraph "External Services"
-        Overseerr1[Overseerr Instance 1]
-        Overseerr2[Overseerr Instance 2]
+        Overseerr1[Seerr Instance 1]
+        Overseerr2[Seerr Instance 2]
         Providers[External Providers]
     end
     
@@ -1089,7 +1089,7 @@ graph TB
     end
     
     subgraph "Media Services"
-        Overseerr[Overseerr/Jellyseerr]
+        Seerr[Seerr]
         Plex[Plex Media Server]
         Jellyfin[Jellyfin Media Server]
         Emby[Emby Media Server]
@@ -1116,7 +1116,7 @@ graph TB
         ELK[ELK Stack]
     end
     
-    SyncEngine --> Overseerr
+    SyncEngine --> Seerr
     SyncEngine --> Plex
     SyncEngine --> Jellyfin
     SyncEngine --> Emby
@@ -1137,7 +1137,7 @@ graph TB
     API --> ELK
     
     style SyncEngine fill:#4CAF50
-    style Overseerr fill:#2196F3
+    style Seerr fill:#2196F3
     style IMDb fill:#FF9800
     style Discord fill:#9C27B0
     style Prometheus fill:#f44336

@@ -8,13 +8,17 @@ services:
       # Timezone - Supports: IANA names (Europe/Paris), abbreviations (CET), offsets (UTC+1, GMT-5)
       - TZ=${TZ:-UTC}
       
-      # Overseerr Configuration
+      # Seerr Configuration
+      - SEERR_URL=${SEERR_URL:-}
       - OVERSEERR_URL=${OVERSEERR_URL:-}
+      - SEERR_API_KEY=${SEERR_API_KEY:-}
       - OVERSEERR_API_KEY=${OVERSEERR_API_KEY:-}
-      - OVERSEERR_USER_ID=${OVERSEERR_USER_ID:-1}
+      - SEERR_USER_ID=${SEERR_USER_ID:-}
+      - OVERSEERR_USER_ID=${OVERSEERR_USER_ID:-}
       - SYNC_INTERVAL=${SYNC_INTERVAL:-24}
       - AUTOMATED_MODE=true
-      - OVERSEERR_4K=${OVERSEERR_4K:-false}
+      - SEERR_4K=${SEERR_4K:-}
+      - OVERSEERR_4K=${OVERSEERR_4K:-}
       
       # List Configuration (comma-separated)
       - IMDB_LISTS=${IMDB_LISTS:-}

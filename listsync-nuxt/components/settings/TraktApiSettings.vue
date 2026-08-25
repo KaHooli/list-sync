@@ -90,7 +90,7 @@
                   <li>Direct TMDB ID lookup (Trakt lists provide this automatically)</li>
                   <li>IMDB ID → Trakt API → TMDB ID resolution</li>
                   <li>Title/Year → Trakt API → TMDB ID lookup</li>
-                  <li>Without it, only fallback to Overseerr text search (less accurate)</li>
+                  <li>Without it, only fallback to Seerr text search (less accurate)</li>
                 </ul>
               </div>
             </div>

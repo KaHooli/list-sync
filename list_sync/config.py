@@ -21,6 +21,62 @@ from .utils.logger import DATA_DIR
 # Define paths for config and database
 CONFIG_FILE = os.path.join(DATA_DIR, "config.enc")
 
+# Overseerr and Jellyseerr became Seerr (https://seerr.dev), so the settings
+# are named SEERR_* now. The OVERSEERR_* names still work: an existing install
+# keeps running after an upgrade without anyone editing a .env file.
+LEGACY_ENV_NAMES = {
+    "SEERR_URL": "OVERSEERR_URL",
+    "SEERR_API_KEY": "OVERSEERR_API_KEY",
+    "SEERR_USER_ID": "OVERSEERR_USER_ID",
+    "SEERR_4K": "OVERSEERR_4K",
+}
+
+# Which old names have already been mentioned, so a long-running process says
+# it once rather than on every read.
+_reported_legacy_names = set()
+
+
+def get_seerr_env(name: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Read a SEERR_* setting, accepting its old OVERSEERR_* name.
+
+    The current name wins if both are set, so a half-migrated environment
+    behaves predictably rather than depending on which is read first.
+
+    Args:
+        name (str): The current variable name, such as SEERR_URL
+        default (Optional[str]): Returned when neither name is set
+
+    Returns:
+        Optional[str]: The value, or default
+    """
+    import logging
+
+    # An empty value counts as unset. docker-compose passes ${SEERR_URL:-},
+    # which defines the variable as an empty string when the user has not set
+    # it, and treating that as a real value would shadow the old name and
+    # break the very installs this fallback exists for.
+    def _set(raw):
+        return raw is not None and raw.strip() != ""
+
+    value = os.getenv(name)
+    if _set(value):
+        return value
+
+    legacy_name = LEGACY_ENV_NAMES.get(name)
+    if legacy_name:
+        value = os.getenv(legacy_name)
+        if _set(value):
+            if legacy_name not in _reported_legacy_names:
+                _reported_legacy_names.add(legacy_name)
+                logging.warning(
+                    f"{legacy_name} is the old name for {name}. It still works, "
+                    f"but rename it when convenient - Overseerr is Seerr now."
+                )
+            return value
+
+    return default
+
 def encrypt_config(data, password):
     """
     Encrypt configuration data with a password.
@@ -51,16 +107,16 @@ def decrypt_config(encrypted_data, password):
     fernet = Fernet(key)
     return json.loads(fernet.decrypt(encrypted_data).decode())
 
-def save_config(overseerr_url, api_key, requester_user_id):
+def save_config(seerr_url, api_key, requester_user_id):
     """
     Save configuration to encrypted file.
     
     Args:
-        overseerr_url (str): Overseerr URL
+        seerr_url (str): Seerr URL
         api_key (str): API key
         requester_user_id (str): Requester user ID
     """
-    config = {"overseerr_url": overseerr_url, "api_key": api_key, "requester_user_id": requester_user_id}
+    config = {"overseerr_url": seerr_url, "api_key": api_key, "requester_user_id": requester_user_id}
     print(color_gradient("🔐  Enter a password to encrypt your API details: ", "#ff0000", "#aa0000"), end="")
     password = getpass.getpass("")
     encrypted_config = encrypt_config(config, password)
@@ -73,7 +129,7 @@ def load_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
     Load configuration from encrypted file.
     
     Returns:
-        Tuple[Optional[str], Optional[str], Optional[str]]: Overseerr URL, API key, and requester user ID
+        Tuple[Optional[str], Optional[str], Optional[str]]: Seerr URL, API key, and requester user ID
     """
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "rb") as f:
@@ -101,10 +157,10 @@ def load_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
                     return None, None, None
     return None, None, None
 
-def test_overseerr_api(overseerr_url, api_key):
-    """Test Overseerr API connection."""
+def test_overseerr_api(seerr_url, api_key):
+    """Test Seerr API connection."""
     headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
-    test_url = f"{overseerr_url}/api/v1/status"
+    test_url = f"{seerr_url}/api/v1/status"
     spinner = Halo(text=color_gradient("🔍  Testing API connection...", "#ffaa00", "#ff5500"), spinner="dots")
     spinner.start()
     try:
@@ -112,17 +168,17 @@ def test_overseerr_api(overseerr_url, api_key):
         response.raise_for_status()
         spinner.succeed(color_gradient("🎉  API connection successful!", "#00ff00", "#00aa00"))
         import logging
-        logging.info("Overseerr API connection successful!")
+        logging.info("Seerr API connection successful!")
     except Exception as e:
-        spinner.fail(color_gradient(f"❌  Overseerr API connection failed. Error: {str(e)}", "#ff0000", "#aa0000"))
+        spinner.fail(color_gradient(f"❌  Seerr API connection failed. Error: {str(e)}", "#ff0000", "#aa0000"))
         import logging
-        logging.error(f"Overseerr API connection failed. Error: {str(e)}")
+        logging.error(f"Seerr API connection failed. Error: {str(e)}")
         raise
 
-def set_requester_user(overseerr_url, api_key):
+def set_requester_user(seerr_url, api_key):
     """Set the requester user for API requests."""
     headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
-    users_url = f"{overseerr_url}/api/v1/user"
+    users_url = f"{seerr_url}/api/v1/user"
     try:
         requester_user_id = "1"
         response = requests.get(users_url, headers=headers)
@@ -142,7 +198,7 @@ def set_requester_user(overseerr_url, api_key):
         return requester_user_id
     except Exception as e:
         import logging
-        logging.error(f"Overseerr API connection failed. Error: {str(e)}")
+        logging.error(f"Seerr API connection failed. Error: {str(e)}")
         return 1
 
 def get_trakt_client_id() -> Optional[str]:
@@ -216,7 +272,7 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
     Load configuration from database or environment variables (database preferred).
     
     Returns:
-        Tuple: Overseerr URL, API key, user ID, sync interval (float), automated mode flag, 4K flag
+        Tuple: Seerr URL, API key, user ID, sync interval (float), automated mode flag, 4K flag
     """
     import logging
     
@@ -261,8 +317,8 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
                 logging.info("Configuration loaded from database")
                 return url, api_key, user_id, sync_interval, automated_mode, is_4k
             except Exception as e:
-                logging.error(f"Error testing Overseerr API with database config: {e}")
-                print(color_gradient(f"\n❌  Error testing Overseerr API: {e}", "#ff0000", "#aa0000"))
+                logging.error(f"Error testing Seerr API with database config: {e}")
+                print(color_gradient(f"\n❌  Error testing Seerr API: {e}", "#ff0000", "#aa0000"))
         
         return None, None, None, 0.0, False, False
         
@@ -274,12 +330,12 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
         if os.path.exists('.env'):
             load_dotenv()
             
-        url = os.getenv('OVERSEERR_URL')
-        api_key = os.getenv('OVERSEERR_API_KEY')
-        user_id = os.getenv('OVERSEERR_USER_ID', '1')
+        url = get_seerr_env('SEERR_URL')
+        api_key = get_seerr_env('SEERR_API_KEY')
+        user_id = get_seerr_env('SEERR_USER_ID', '1')
         sync_interval = os.getenv('SYNC_INTERVAL', '12')
         automated_mode = os.getenv('AUTOMATED_MODE', 'true').lower() == 'true'
-        is_4k = os.getenv('OVERSEERR_4K', 'false').lower() == 'true'
+        is_4k = get_seerr_env('SEERR_4K', 'false').lower() == 'true'
         discord_webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
         
         # Log if Discord webhook is configured
@@ -294,12 +350,12 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
                 logging.info("Configuration loaded from environment variables")
                 return url, api_key, user_id, float(sync_interval), automated_mode, is_4k
             except Exception as e:
-                logging.error(f"Error testing Overseerr API with environment variables: {e}")
-                print(color_gradient(f"\n❌  Error testing Overseerr API: {e}", "#ff0000", "#aa0000"))
+                logging.error(f"Error testing Seerr API with environment variables: {e}")
+                print(color_gradient(f"\n❌  Error testing Seerr API: {e}", "#ff0000", "#aa0000"))
         
         return None, None, None, 0.0, False, False
 
-# Separator between a list ID and the Overseerr user it should request as, in
+# Separator between a list ID and the Seerr user it should request as, in
 # the *_LISTS environment variables. Two colons, because a single colon already
 # means something in Trakt special lists ("trending:movies") and appears in URLs.
 LIST_USER_SEPARATOR = "::"
@@ -310,7 +366,7 @@ def parse_list_entry(raw_entry: str) -> Tuple[str, Optional[str]]:
     Split one entry of a *_LISTS environment variable into list ID and user.
 
     Entries are either a bare list ID ("ls123456789") or a list ID with the
-    Overseerr user that should request its items ("ls123456789::7").
+    Seerr user that should request its items ("ls123456789::7").
 
     Args:
         raw_entry (str): One comma-separated entry from a *_LISTS variable
@@ -698,11 +754,11 @@ class ConfigManager:
         logging.info("Starting environment to database migration")
         
         settings_to_migrate = {
-            # Overseerr
-            'overseerr_url': os.getenv('OVERSEERR_URL', ''),
-            'overseerr_api_key': os.getenv('OVERSEERR_API_KEY', ''),
-            'overseerr_user_id': os.getenv('OVERSEERR_USER_ID', '1'),
-            'overseerr_4k': os.getenv('OVERSEERR_4K', 'false').lower() == 'true',
+            # Seerr
+            'overseerr_url': get_seerr_env('SEERR_URL', ''),
+            'overseerr_api_key': get_seerr_env('SEERR_API_KEY', ''),
+            'overseerr_user_id': get_seerr_env('SEERR_USER_ID', '1'),
+            'overseerr_4k': get_seerr_env('SEERR_4K', 'false').lower() == 'true',
             
             # Trakt
             'trakt_client_id': os.getenv('TRAKT_CLIENT_ID', ''),
@@ -755,7 +811,7 @@ class ConfigManager:
             return False
         
         load_dotenv()
-        return bool(os.getenv('OVERSEERR_URL') and os.getenv('OVERSEERR_API_KEY'))
+        return bool(get_seerr_env('SEERR_URL') and get_seerr_env('SEERR_API_KEY'))
     
     def reload(self):
         """Reload configuration from database."""

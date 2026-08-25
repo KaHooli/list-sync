@@ -1,4 +1,4 @@
-"""Check OverseerrClient classifies each Seerr failure mode correctly."""
+"""Check SeerrClient classifies each Seerr failure mode correctly."""
 import os, sys, types, logging
 
 import os, sys
@@ -13,7 +13,7 @@ for name in ("seleniumbase", "bs4", "dotenv"):
         sys.modules[name] = mod
 
 import requests
-from list_sync.api.overseerr import OverseerrClient
+from list_sync.api.seerr import SeerrClient
 
 fail = []
 def check(label, got, want):
@@ -44,7 +44,7 @@ def make_post(response):
         return response
     return _post
 
-client = OverseerrClient("https://seerr.example.com/", "KEY", "1")
+client = SeerrClient("https://seerr.example.com/", "KEY", "1")
 
 # The requester must travel as X-Api-User, not as the client default.
 requests.post = make_post(FakeResponse(201, {"id": 5}))
@@ -53,7 +53,7 @@ check("X-Api-User header sent", captured["headers"].get("X-Api-User"), "7")
 check("url has no double slash", captured["url"], "https://seerr.example.com/api/v1/request")
 check("payload", captured["json"], {"mediaId": 603, "mediaType": "movie", "is4k": False})
 
-# 409 is Overseerr's real duplicate response - the old code called this an error.
+# 409 is Seerr's real duplicate response - the old code called this an error.
 requests.post = make_post(FakeResponse(409, {"message": "Request for this media already exists."}))
 check("409 duplicate", client.request_media(603, "movie", requester_user_id="7"), "already_requested")
 

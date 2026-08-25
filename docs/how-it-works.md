@@ -2,7 +2,7 @@
 
 ## Overview
 
-ListSync is a sophisticated automation tool that bridges your watchlists from various platforms (IMDb, Trakt, Letterboxd, MDBList, StevenLu) with your media server infrastructure (Overseerr/Jellyseerr). This document provides comprehensive technical details about the tool's architecture, data flow, and implementation.
+ListSync is a sophisticated automation tool that bridges your watchlists from various platforms (IMDb, Trakt, Letterboxd, MDBList, StevenLu) with your media server infrastructure (Seerr). This document provides comprehensive technical details about the tool's architecture, data flow, and implementation.
 
 ## 🏗️ Architecture Overview
 
@@ -10,7 +10,7 @@ ListSync is a sophisticated automation tool that bridges your watchlists from va
 
 1. **Main Application (`main.py`)**: Orchestrates the entire sync process and handles user interactions
 2. **Provider System (`providers/`)**: Modular system for fetching data from different list services
-3. **API Client (`api/overseerr.py`)**: Handles communication with Overseerr/Jellyseerr APIs
+3. **API Client (`api/overseerr.py`)**: Handles communication with Seerr APIs
 4. **Database Layer (`database.py`)**: SQLite-based persistence for tracking lists and sync state
 5. **Configuration Management (`config.py`)**: Handles settings, credentials, and environment variables
 6. **User Interface (`ui/`)**: CLI interface for interactive mode and display functions
@@ -76,7 +76,7 @@ flowchart TD
 - **Environment Variables**: Prioritizes Docker/environment-based configuration (highest priority)
 - **Encrypted Storage**: Falls back to encrypted local config file using Fernet encryption
 - **Interactive Setup**: Prompts for credentials if none found (lowest priority)
-- **API Validation**: Tests Overseerr connection and sets requester user
+- **API Validation**: Tests Seerr connection and sets requester user
 
 ### 3. List Processing Pipeline
 
@@ -146,7 +146,7 @@ def fetch_imdb_list(list_id: str) -> List[Dict[str, Any]]:
 ```mermaid
 sequenceDiagram
     participant P as Process Media
-    participant O as Overseerr API
+    participant O as Seerr API
     participant M as Match Engine
     
     P->>O: Search by Title & Year
@@ -175,7 +175,7 @@ sequenceDiagram
 
 #### Search Algorithm
 
-The Overseerr client implements sophisticated matching:
+The Seerr client implements sophisticated matching:
 
 1. **Query Processing**: Strips years from titles, handles special characters
 2. **Pagination**: Searches through multiple result pages
@@ -197,7 +197,7 @@ min_similarity = 0.5 if exact_year_match else 0.7
 
 ```mermaid
 flowchart TD
-    A[Sync Media to Overseerr] --> B[Check Media Status]
+    A[Sync Media to Seerr] --> B[Check Media Status]
     B --> C{Already Available?}
     C -->|Yes| D[Mark as Available]
     C -->|No| E{Already Requested?}
@@ -236,7 +236,7 @@ For each media item, the system:
 #### TV Series Handling
 
 - Automatically requests all available seasons
-- Extracts season count from Overseerr metadata
+- Extracts season count from Seerr metadata
 - Handles multi-season series appropriately
 
 ### 6. Database Persistence and Tracking
@@ -258,7 +258,7 @@ CREATE TABLE synced_items (
     title TEXT NOT NULL,
     media_type TEXT NOT NULL,       -- movie or tv
     imdb_id TEXT,                   -- External identifier
-    overseerr_id INTEGER,           -- Internal Overseerr ID
+    overseerr_id INTEGER,           -- Internal Seerr ID
     status TEXT,                    -- requested, available, etc.
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -404,7 +404,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 ### Caching and Memoization
 
-- **Search Result Caching**: Temporary caching of Overseerr search results
+- **Search Result Caching**: Temporary caching of Seerr search results
 - **Status Checking**: Skip recently checked items (48-hour window)
 - **Database Indexing**: Optimized queries with proper indexes
 
@@ -441,7 +441,7 @@ def fetch_newservice_list(list_id: str) -> List[Dict[str, Any]]:
 
 ### API Client Extension
 
-The Overseerr client can be extended for other media servers by:
+The Seerr client can be extended for other media servers by:
 1. Implementing the same interface
 2. Adapting the search and request methods
 3. Maintaining the same return data structure
@@ -471,7 +471,7 @@ export LOG_LEVEL=DEBUG
 ### Log Analysis
 
 Key log patterns to monitor:
-- `"API connection successful"`: Confirms Overseerr connectivity
+- `"API connection successful"`: Confirms Seerr connectivity
 - `"Found X items in Y list"`: Successful list processing
 - `"Rate limited"`: API throttling detection
 - `"Error fetching"`: Provider-specific failures
@@ -483,7 +483,7 @@ Key log patterns to monitor:
 Typical performance characteristics:
 - **IMDb Lists**: 50-100 items per minute (depending on list size)
 - **Trakt Lists**: 30-80 items per minute
-- **API Requests**: Limited by Overseerr rate limits (typically 10-20 req/sec)
+- **API Requests**: Limited by Seerr rate limits (typically 10-20 req/sec)
 - **Database Operations**: 1000+ operations per second on modern systems
 
 ### Scalability Considerations

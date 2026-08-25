@@ -51,7 +51,7 @@ graph TB
     Logs --> FileSystem[Log Files]
     
     Core --> Providers[List Providers<br/>IMDb, Trakt, etc.]
-    Core --> Overseerr[Overseerr API]
+    Core --> Seerr[Seerr API]
     
     style Gateway fill:#4CAF50
     style Router fill:#2196F3
@@ -748,12 +748,12 @@ PUT /api/sync-interval
 }
 ```
 
-### Get Overseerr Status
+### Get Seerr Status
 ```http
 GET /api/overseerr/status
 ```
 
-Returns Overseerr connection status and configuration.
+Returns Seerr connection status and configuration.
 
 **Response:**
 ```json
@@ -908,7 +908,7 @@ data: {"timestamp": "2024-01-15T10:30:10Z", "level": "INFO", "message": "Found 2
 
 | Error Code | Description | Solution |
 |------------|-------------|----------|
-| `OVERSEERR_CONNECTION_ERROR` | Cannot connect to Overseerr | Check Overseerr URL and API key |
+| `OVERSEERR_CONNECTION_ERROR` | Cannot connect to Seerr | Check Seerr URL and API key |
 | `DATABASE_ERROR` | Database operation failed | Check database file permissions |
 | `INVALID_LIST_FORMAT` | List ID format is invalid | Verify list ID format |
 | `SYNC_IN_PROGRESS` | Sync already running | Wait for current sync to complete |

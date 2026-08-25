@@ -5,7 +5,7 @@ This document provides comprehensive technical reference for ListSync's APIs, da
 ## 📚 Table of Contents
 
 1. [Provider API Interface](#provider-api-interface)
-2. [Overseerr API Integration](#overseerr-api-integration)
+2. [Seerr API Integration](#overseerr-api-integration)
 3. [Database Schema](#database-schema)
 4. [Configuration API](#configuration-api)
 5. [Data Structures](#data-structures)
@@ -149,28 +149,28 @@ def fetch_robust_list(list_id: str) -> List[Dict[str, Any]]:
         raise
 ```
 
-## 🎬 Overseerr API Integration
+## 🎬 Seerr API Integration
 
 ### OverseerrClient Class
 
-The main interface for Overseerr/Jellyseerr communication:
+The main interface for Seerr communication:
 
 ```python
 class OverseerrClient:
     def __init__(self, overseerr_url: str, api_key: str, requester_user_id: str = "1"):
-        """Initialize Overseerr client."""
+        """Initialize Seerr client."""
         
     def test_connection(self) -> bool:
         """Test API connectivity."""
         
     def search_media(self, media_title: str, media_type: str, release_year: int = None) -> Optional[Dict[str, Any]]:
-        """Search for media in Overseerr."""
+        """Search for media in Seerr."""
         
     def get_media_status(self, media_id: int, media_type: str) -> Tuple[bool, bool, int]:
         """Get media availability status."""
         
     def request_media(self, media_id: int, media_type: str, is_4k: bool = False) -> str:
-        """Request media from Overseerr."""
+        """Request media from Seerr."""
 ```
 
 ### API Endpoints Used
@@ -266,7 +266,7 @@ CREATE TABLE synced_items (
     title TEXT NOT NULL,
     media_type TEXT NOT NULL,       -- "movie" or "tv"
     imdb_id TEXT,                   -- External reference
-    overseerr_id INTEGER,           -- Internal Overseerr ID
+    overseerr_id INTEGER,           -- Internal Seerr ID
     status TEXT NOT NULL,           -- "requested", "available", "error"
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     error_message TEXT,             -- Error details if status = "error"
@@ -432,7 +432,7 @@ class MediaItem(TypedDict):
 
 ```python
 class SearchResult(TypedDict):
-    id: int                    # Overseerr internal ID
+    id: int                    # Seerr internal ID
     mediaType: str            # "movie" or "tv"
     title: NotRequired[str]   # For movies
     name: NotRequired[str]    # For TV shows

@@ -110,7 +110,7 @@ docker-compose -f docker-compose.local.yml logs -f
 imdb-overseerr/
 ├── list_sync/                    # Core Python application
 │   ├── api/                     # API integrations
-│   │   └── overseerr.py        # Overseerr API client
+│   │   └── overseerr.py        # Seerr API client
 │   ├── providers/               # List provider implementations
 │   │   ├── imdb.py             # IMDb provider
 │   │   ├── trakt.py            # Trakt provider
@@ -536,21 +536,21 @@ describe('SyncStatus', () => {
 ```python
 def sync_items(items: List[Dict], overseerr_api: str) -> SyncResults:
     """
-    Synchronize media items with Overseerr.
+    Synchronize media items with Seerr.
     
     This function processes a list of media items and requests them
-    via the Overseerr API. It handles duplicate detection, error
+    via the Seerr API. It handles duplicate detection, error
     recovery, and progress tracking.
     
     Args:
         items: List of media items with title, year, and type
-        overseerr_api: Base URL for Overseerr API
+        overseerr_api: Base URL for Seerr API
         
     Returns:
         SyncResults object containing statistics and failed items
         
     Raises:
-        ConnectionError: When Overseerr API is unreachable
+        ConnectionError: When Seerr API is unreachable
         ValueError: When items list is empty or malformed
         
     Example:

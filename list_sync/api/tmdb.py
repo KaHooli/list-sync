@@ -1,7 +1,7 @@
 """
 TMDB API client for resolving external IDs to TMDB IDs.
 
-IMDb lists give us IMDb IDs, but Overseerr is addressed by TMDB ID, so
+IMDb lists give us IMDb IDs, but Seerr is addressed by TMDB ID, so
 something has to bridge the two. ListSync has always used Trakt for that, but
 Trakt now requires a paid VIP subscription to register an API application,
 which puts exact ID resolution behind a paywall.

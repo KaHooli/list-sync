@@ -70,7 +70,7 @@
       <div class="p-6">
         <!-- Core Settings Tab -->
         <div v-if="activeTab === 'core'" class="space-y-6">
-          <!-- Overseerr Configuration -->
+          <!-- Seerr Configuration -->
           <OverseerrConfig
             v-model="settings.overseerr"
             @test-connection="testOverseerrConnection"
@@ -179,7 +179,7 @@ const tabs = [
     id: 'core',
     label: 'Core',
     icon: SettingsIcon,
-    description: 'Overseerr and sync settings',
+    description: 'Seerr and sync settings',
   },
   {
     id: 'api-keys',
@@ -197,7 +197,7 @@ const tabs = [
     id: 'users',
     label: 'Users',
     icon: UsersIcon,
-    description: 'Manage Overseerr users for per-list assignment',
+    description: 'Manage Seerr users for per-list assignment',
   },
   {
     id: 'advanced',
@@ -318,7 +318,7 @@ const handleSave = async () => {
     
     // Prepare payload for other settings
     const payload = {
-      // Overseerr Configuration
+      // Seerr Configuration
       overseerr_url: settings.value.overseerr.url,
       overseerr_api_key: settings.value.overseerr.apiKey,
       overseerr_user_id: settings.value.overseerr.userId,
@@ -362,16 +362,16 @@ const handleReset = () => {
   showInfo('Settings Reset', 'Settings have been reloaded')
 }
 
-// Test Overseerr connection
+// Test Seerr connection
 const testOverseerrConnection = async () => {
   try {
     const api = useApiService()
     const status = await api.checkOverseerr()
     
     if (status.isConnected) {
-      showSuccess('Connection Successful', 'Overseerr is connected and working')
+      showSuccess('Connection Successful', 'Seerr is connected and working')
     } else {
-      showError('Connection Failed', status.error || 'Unable to connect to Overseerr')
+      showError('Connection Failed', status.error || 'Unable to connect to Seerr')
     }
   } catch (error: any) {
     showError('Connection Failed', error.message)

@@ -1,5 +1,5 @@
 /**
- * Users Store - Manages Overseerr users
+ * Users Store - Manages Seerr users
  */
 
 import { defineStore } from 'pinia'
@@ -25,7 +25,7 @@ export const useUsersStore = defineStore('users', {
      * Get user by ID
      */
     getUserById: (state) => (userId: string | number) => {
-      // IDs arrive as strings from the database and as numbers from Overseerr,
+      // IDs arrive as strings from the database and as numbers from Seerr,
       // so compare them as strings rather than missing every match.
       return state.users.find(user => String(user.id) === String(userId))
     },
@@ -69,7 +69,7 @@ export const useUsersStore = defineStore('users', {
     },
 
     /**
-     * Sync users from Overseerr API
+     * Sync users from Seerr API
      */
     async syncUsers() {
       this.syncing = true

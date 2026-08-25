@@ -3,10 +3,10 @@
 Diagnose why a list's requests aren't being attributed to the intended Seerr user.
 
 Cross-references the lists in ListSync's database against the users on the
-Overseerr/Jellyseerr server, and reports the specific reasons a list would
+Seerr server, and reports the specific reasons a list would
 fail to request as its assigned user.
 
-Run it inside the ListSync container, where the database and the Overseerr
+Run it inside the ListSync container, where the database and the Seerr
 credentials are already present:
 
     docker exec -it listsync-full python3 development-files/scripts/diagnose_list_users.py
@@ -26,7 +26,7 @@ import urllib.request
 
 DB_PATH = os.getenv("LISTSYNC_DB", "./data/list_sync.db")
 
-# Overseerr/Jellyseerr permission bits (server/lib/permissions.ts).
+# Seerr permission bits, unchanged from Overseerr (server/lib/permissions.ts).
 PERMISSION_ADMIN = 2
 PERMISSION_MANAGE_REQUESTS = 16
 PERMISSION_REQUEST = 32
@@ -36,7 +36,7 @@ PERMISSION_REQUEST_TV = 524288
 
 
 def api_get(base_url, api_key, path):
-    """GET a JSON document from the Overseerr API."""
+    """GET a JSON document from the Seerr API."""
     url = f"{base_url.rstrip('/')}{path}"
     request = urllib.request.Request(url, headers={"X-Api-Key": api_key})
     try:
@@ -100,24 +100,40 @@ def looks_like_url(value):
     return str(value).startswith(("http://", "https://"))
 
 
+def seerr_env(name, legacy_name, default=""):
+    """
+    Read a SEERR_* setting, accepting the old OVERSEERR_* name.
+
+    Duplicated from list_sync.config rather than imported: this script is
+    standard library only so it runs under docker exec with no install step.
+    An empty value counts as unset, because compose defines the variable as
+    an empty string when the user has not set it.
+    """
+    for candidate in (name, legacy_name):
+        value = os.getenv(candidate, "").strip()
+        if value:
+            return value
+    return default
+
+
 def main():
-    overseerr_url = os.getenv("OVERSEERR_URL", "").strip()
-    api_key = os.getenv("OVERSEERR_API_KEY", "").strip()
-    default_user = os.getenv("OVERSEERR_USER_ID", "1").strip() or "1"
-    is_4k = os.getenv("OVERSEERR_4K", "false").strip().lower() == "true"
+    seerr_url = seerr_env("SEERR_URL", "OVERSEERR_URL")
+    api_key = seerr_env("SEERR_API_KEY", "OVERSEERR_API_KEY")
+    default_user = seerr_env("SEERR_USER_ID", "OVERSEERR_USER_ID", "1")
+    is_4k = seerr_env("SEERR_4K", "OVERSEERR_4K", "false").lower() == "true"
 
     print("=" * 72)
     print("ListSync -> Seerr requester diagnostic")
     print("=" * 72)
 
-    if not overseerr_url or not api_key:
-        print("\nOVERSEERR_URL and OVERSEERR_API_KEY must be set in the environment.")
+    if not seerr_url or not api_key:
+        print("\nSEERR_URL and SEERR_API_KEY must be set in the environment.")
         print("Run this inside the ListSync container so it picks them up automatically.")
         return 2
 
-    print(f"\nSeerr:            {overseerr_url}")
+    print(f"\nSeerr:            {seerr_url}")
     print(f"Database:         {DB_PATH}")
-    print(f"Default user:     OVERSEERR_USER_ID={default_user}")
+    print(f"Default user:     SEERR_USER_ID={default_user}")
     print(f"Requesting 4K:    {is_4k}")
 
     # --- lists -------------------------------------------------------------
@@ -132,10 +148,10 @@ def main():
         print("  requests as the admin account. Upgrade ListSync to get per-list users.")
 
     # --- users -------------------------------------------------------------
-    users_doc, error = api_get(overseerr_url, api_key, "/api/v1/user?take=200")
+    users_doc, error = api_get(seerr_url, api_key, "/api/v1/user?take=200")
     if error:
         print(f"\nCould not list Seerr users: {error}")
-        print("Check OVERSEERR_URL and that the API key is valid.")
+        print("Check SEERR_URL and that the API key is valid.")
         return 2
 
     users = {str(u.get("id")): u for u in users_doc.get("results", [])}
@@ -150,7 +166,7 @@ def main():
     assigned_users = {str(r[2] or default_user) for r in rows} or {default_user}
     quotas = {}
     for user_id in sorted(assigned_users):
-        quota, error = api_get(overseerr_url, api_key, f"/api/v1/user/{user_id}/quota")
+        quota, error = api_get(seerr_url, api_key, f"/api/v1/user/{user_id}/quota")
         if not error and quota:
             quotas[user_id] = quota
 

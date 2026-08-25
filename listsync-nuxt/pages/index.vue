@@ -226,7 +226,7 @@
         v-if="!statsStore.hasStats"
         :icon="LayersIcon"
         title="No Lists Configured"
-        description="Add your first list to start syncing media to Overseerr"
+        description="Add your first list to start syncing media to Seerr"
         action-label="Add Your First List"
         @action="$router.push('/lists?action=add')"
       />
@@ -388,8 +388,8 @@ const fetchDashboardData = async () => {
         throw err
       }),
       systemStore.checkOverseerr().catch(err => {
-        console.warn('Overseerr check failed (will retry):', err)
-        // Don't throw - Overseerr might not be configured yet
+        console.warn('Seerr check failed (will retry):', err)
+        // Don't throw - Seerr might not be configured yet
       }),
       syncStore.fetchSyncInterval().catch(err => {
         console.warn('Sync interval fetch failed (will retry):', err)

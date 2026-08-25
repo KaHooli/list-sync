@@ -53,13 +53,13 @@
           </p>
         </div>
 
-        <!-- Overseerr -->
+        <!-- Seerr -->
         <div :class="`p-2.5 rounded-lg bg-gradient-to-br from-purple-300/20 to-purple-200/10 border ${systemStore.isOverseerrConnected ? 'border-green-500/40' : 'border-red-500/40'}`">
           <div class="flex items-center gap-1.5 mb-1.5">
             <component :is="ServerIcon" :size="14" :class="systemStore.isOverseerrConnected ? 'text-purple-100' : 'text-red-400'" />
             <div :class="systemStore.isOverseerrConnected ? 'w-1.5 h-1.5 rounded-full bg-purple-200 animate-pulse' : 'w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse'" />
           </div>
-          <p class="text-xs font-semibold text-foreground mb-0.5">Overseerr</p>
+          <p class="text-xs font-semibold text-foreground mb-0.5">Seerr</p>
           <p class="text-[10px] text-muted-foreground">
             {{ systemStore.isOverseerrConnected ? 'Connected' : 'Disconnected' }}
           </p>

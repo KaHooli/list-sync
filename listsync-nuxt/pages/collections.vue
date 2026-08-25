@@ -7,7 +7,7 @@
           Collections
         </h1>
         <p class="text-muted-foreground mt-1.5 sm:mt-2 text-xs sm:text-sm">
-          Browse popular movie collections and sync them to Overseerr
+          Browse popular movie collections and sync them to Seerr
         </p>
       </div>
 

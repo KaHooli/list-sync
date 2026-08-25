@@ -1,4 +1,4 @@
-"""Startup must survive Overseerr being slow, and never prompt in a container."""
+"""Startup must survive Seerr being slow, and never prompt in a container."""
 import sys, types, os
 
 import os, sys
@@ -99,7 +99,7 @@ m.sys.stdin = None
 check("no stdin at all -> not interactive", m._is_interactive(), False)
 m.sys.stdin = real_stdin
 
-# --- the actual bug: container with unreachable Overseerr must exit, not EOF ---
+# --- the actual bug: container with unreachable Seerr must exit, not EOF ---
 # Stub the retry helper rather than let it spin for its full window: this case
 # is about what get_credentials does once retrying has already given up.
 os.environ["RUNNING_IN_DOCKER"] = "true"

@@ -46,7 +46,7 @@ flowchart LR
 
 ### Quick Start Checklist
 
-- [ ] Overseerr/Jellyseerr URL and API key configured
+- [ ] Seerr URL and API key configured
 - [ ] At least one list provider configured (IMDb, Trakt, etc.)
 - [ ] Sync interval set to your preference
 - [ ] Optional: Discord webhook for notifications
@@ -265,12 +265,12 @@ Description: Popular movies collection
 **Sync Settings:**
 - **Auto-sync** - Include in automated sync cycles
 - **Priority** - Sync order (high, normal, low)
-- **4K Requests** - Send requests as 4K to Overseerr
+- **4K Requests** - Send requests as 4K to Seerr
 - **Media Types** - Movies only, TV only, or both
 
 **Advanced Options:**
 - **Item Limit** - Maximum items to sync from list
-- **Skip Existing** - Skip items already in Overseerr
+- **Skip Existing** - Skip items already in Seerr
 - **Custom Filters** - Year range, genre filters, etc.
 
 ### Managing Existing Lists
@@ -399,7 +399,7 @@ flowchart TD
 **Performance Metrics:**
 - **Average Sync Time** - Time per sync operation
 - **Items Per Hour** - Processing rate
-- **API Response Time** - Overseerr API performance
+- **API Response Time** - Seerr API performance
 - **Error Rate** - Failure percentage
 
 ### Detailed Analytics
@@ -436,7 +436,7 @@ flowchart TD
 
 **Core Settings:**
 ```bash
-# Overseerr/Jellyseerr Connection
+# Seerr Connection
 OVERSEERR_URL=http://your-overseerr-url:5055
 OVERSEERR_API_KEY=your-api-key-here
 OVERSEERR_USER_ID=1
@@ -466,7 +466,7 @@ STEVENLU_LISTS=stevenlu
 ### Web-based Configuration
 
 **Settings Interface:**
-- **Connection Settings** - Overseerr/Jellyseerr configuration
+- **Connection Settings** - Seerr configuration
 - **Sync Settings** - Intervals and automation
 - **Provider Settings** - List configuration
 - **Notification Settings** - Discord/email setup
@@ -497,7 +497,7 @@ STEVENLU_LISTS=stevenlu
 ### Common Issues
 
 **Sync Failures:**
-1. **Check Overseerr Connection**
+1. **Check Seerr Connection**
    - Verify URL and API key
    - Test connection in settings
    - Check network connectivity

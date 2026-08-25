@@ -7,7 +7,7 @@
           Requested Items
         </h1>
         <p class="text-muted-foreground mt-2 text-base">
-          Items that have been requested in Overseerr
+          Items that have been requested in Seerr
         </p>
       </div>
 

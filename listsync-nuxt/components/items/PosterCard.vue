@@ -6,7 +6,7 @@
       'simple-mode': simple
     }"
     role="button"
-    :aria-label="`View ${item.title} in Overseerr`"
+    :aria-label="`View ${item.title} in Seerr`"
     tabindex="0"
     @click="handleClick"
     @keydown.enter="handleClick"
@@ -119,14 +119,14 @@
               </span>
             </div>
 
-            <!-- View in Overseerr Button (Slimmer) -->
+            <!-- View in Seerr Button (Slimmer) -->
             <button
               v-if="item.overseerr_url"
               class="w-full bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white font-medium text-xs py-1.5 px-2 rounded-md flex items-center justify-center gap-1.5 transition-all duration-200 shadow-sm"
               @click.stop="handleClick"
             >
               <ExternalLinkIcon :size="12" />
-              <span>View in Overseerr</span>
+              <span>View in Seerr</span>
             </button>
             <div
               v-else
@@ -245,7 +245,7 @@ const handleClick = () => {
   if (props.item.overseerr_url) {
     window.open(props.item.overseerr_url, '_blank', 'noopener,noreferrer')
   } else {
-    showError('Cannot open Overseerr', 'This item is not available in Overseerr')
+    showError('Cannot open Seerr', 'This item is not available in Seerr')
   }
 }
 

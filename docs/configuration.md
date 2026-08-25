@@ -31,17 +31,17 @@ IMDB_LISTS=top
 
 ## ⚙️ Core Configuration
 
-### Overseerr Connection (Required)
+### Seerr Connection (Required)
 
 | Variable | Description | Required | Default | Example |
 |----------|-------------|----------|---------|---------|
-| `OVERSEERR_URL` | Your Overseerr server URL | ✅ | - | `https://overseerr.example.com` |
-| `OVERSEERR_API_KEY` | API key from Overseerr settings | ✅ | - | `abc123...` |
+| `OVERSEERR_URL` | Your Seerr server URL | ✅ | - | `https://overseerr.example.com` |
+| `OVERSEERR_API_KEY` | API key from Seerr settings | ✅ | - | `abc123...` |
 | `OVERSEERR_USER_ID` | User ID for making requests | ❌ | `1` | `1` |
-| `OVERSEERR_4K` | Send requests as 4K to Overseerr | ❌ | `false` | `true` |
+| `OVERSEERR_4K` | Send requests as 4K to Seerr | ❌ | `false` | `true` |
 
 **Getting your API key:**
-1. Log into your Overseerr instance
+1. Log into your Seerr instance
 2. Go to Settings → General → API Key
 3. Copy the API key and add it to your `.env` file
 
@@ -489,7 +489,7 @@ ListSync looks for environment files in this order:
 - Check for typos in list IDs
 
 **Network Issues:**
-- Verify Overseerr URL is accessible from ListSync container
+- Verify Seerr URL is accessible from ListSync container
 - Check firewall settings for Docker networking
 - Ensure CORS settings include your domain
 

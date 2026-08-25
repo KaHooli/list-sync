@@ -9,7 +9,7 @@ rows = cursor.fetchall()
 
 print('Sample Database Records:')
 print('=' * 120)
-print(f"{'ID':<5} | {'Title':<40} | {'Type':<6} | {'IMDB ID':<12} | {'TMDB ID':<10} | {'Overseerr ID':<12}")
+print(f"{'ID':<5} | {'Title':<40} | {'Type':<6} | {'IMDB ID':<12} | {'TMDB ID':<10} | {'Seerr ID':<12}")
 print('-' * 120)
 
 for row in rows:

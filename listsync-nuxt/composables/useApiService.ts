@@ -250,7 +250,7 @@ export function useApiService() {
       return apiCall(`${baseURL}/requested?page=${page}&limit=${limit}`)
     },
 
-    // Overseerr Integration
+    // Seerr Integration
     async getOverseerrStatus() {
       return apiCall(`${baseURL}/overseerr/status`)
     },

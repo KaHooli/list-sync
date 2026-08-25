@@ -17,7 +17,7 @@ for n in ("seleniumbase", "bs4", "halo"):
 c = stub("cryptography"); f = stub("cryptography.fernet", ("Fernet", "InvalidToken")); c.fernet = f
 d = stub("dotenv"); d.load_dotenv = lambda *a, **k: None; d.set_key = lambda *a, **k: None
 
-from list_sync.api.overseerr import OverseerrClient
+from list_sync.api.seerr import SeerrClient
 
 fail = []
 def check(label, got, want):
@@ -46,7 +46,7 @@ check("mixed assigned and default", collect([
 ], "1"), ["7", "1"])
 
 # --- _extract_requester_ids ---
-ex = OverseerrClient._extract_requester_ids
+ex = SeerrClient._extract_requester_ids
 media_info = {"requests": [
     {"is4k": False, "requestedBy": {"id": 7}},
     {"is4k": False, "requestedBy": {"id": 3}},
@@ -66,7 +66,7 @@ class R:
     def json(self): return self._b
     def raise_for_status(self): pass
 
-client = OverseerrClient("https://seerr.example.com", "KEY", "1")
+client = SeerrClient("https://seerr.example.com", "KEY", "1")
 
 rq.get = lambda *a, **k: R({"mediaInfo": {"status": 5, "requests": [{"is4k": False, "requestedBy": {"id": 1}}]}})
 s = client.get_media_state(603, "movie")

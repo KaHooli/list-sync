@@ -435,7 +435,7 @@ Returns items that were successfully requested.
 GET /api/requested
 ```
 
-Returns items that were requested in Overseerr.
+Returns items that were requested in Seerr.
 
 ## 📝 Logging & Monitoring
 
@@ -519,19 +519,19 @@ POST /api/sync-interval/sync-from-env
 
 Synchronizes sync interval from environment variables.
 
-### Get Overseerr Status
+### Get Seerr Status
 ```http
 GET /api/overseerr/status
 ```
 
-Returns Overseerr connection status and configuration.
+Returns Seerr connection status and configuration.
 
-### Get Overseerr Configuration
+### Get Seerr Configuration
 ```http
 GET /api/overseerr/config
 ```
 
-Returns Overseerr configuration details.
+Returns Seerr configuration details.
 
 ## 🌍 Timezone & Localization
 
@@ -614,7 +614,7 @@ Validates a timezone identifier.
 
 | Error Code | Description | Solution |
 |------------|-------------|----------|
-| `OVERSEERR_CONNECTION_ERROR` | Cannot connect to Overseerr | Check Overseerr URL and API key |
+| `OVERSEERR_CONNECTION_ERROR` | Cannot connect to Seerr | Check Seerr URL and API key |
 | `DATABASE_ERROR` | Database operation failed | Check database file permissions |
 | `INVALID_LIST_FORMAT` | List ID format is invalid | Verify list ID format |
 | `SYNC_IN_PROGRESS` | Sync already running | Wait for current sync to complete |
@@ -623,7 +623,7 @@ Validates a timezone identifier.
 ### Error Response Example
 ```json
 {
-  "detail": "Cannot connect to Overseerr API",
+  "detail": "Cannot connect to Seerr API",
   "error_code": "OVERSEERR_CONNECTION_ERROR",
   "timestamp": "2024-01-15T10:30:00Z",
   "request_id": "req_123456"

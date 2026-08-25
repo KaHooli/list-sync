@@ -246,7 +246,7 @@ export class ApiService {
   }
 
   // ==========================================
-  // Overseerr Integration
+  // Seerr Integration
   // ==========================================
 
   async getOverseerrStatus(): Promise<OverseerrStatus> {

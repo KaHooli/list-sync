@@ -3,9 +3,9 @@
     <template #header>
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-lg font-semibold text-foreground">Overseerr Users</h3>
+          <h3 class="text-lg font-semibold text-foreground">Seerr Users</h3>
           <p class="text-sm text-muted-foreground mt-1">
-            Manage which Overseerr users can request content for each list
+            Manage which Seerr users can request content for each list
           </p>
         </div>
         <Button
@@ -118,7 +118,7 @@
         :icon="RefreshIcon"
         @click="handleSyncUsers"
       >
-        Sync Users from Overseerr
+        Sync Users from Seerr
       </Button>
     </div>
 
@@ -195,7 +195,7 @@ const { showSuccess, showError } = useToast()
 const usersStore = useUsersStore()
 const api = useApiService()
 
-// Overseerr base URL for converting relative avatar URLs
+// Seerr base URL for converting relative avatar URLs
 const overseerrBaseUrl = ref<string | null>(null)
 
 // Default user ID from config
@@ -220,16 +220,16 @@ const selectedUser = computed(() => {
   return usersStore.users.find(user => String(user.id) === String(selectedDefaultUserId.value))
 })
 
-// Fetch Overseerr base URL and default user on mount
+// Fetch Seerr base URL and default user on mount
 onMounted(async () => {
-  // Fetch Overseerr config to get base URL and default user
+  // Fetch Seerr config to get base URL and default user
   try {
     const config = await api.getConfig()
     overseerrBaseUrl.value = config.overseerr_url || null
     defaultUserId.value = config.overseerr_user_id || '1'
     selectedDefaultUserId.value = config.overseerr_user_id || '1'
   } catch (error) {
-    console.error('Failed to load Overseerr URL from config:', error)
+    console.error('Failed to load Seerr URL from config:', error)
   }
   
   await usersStore.fetchUsers()
@@ -247,13 +247,13 @@ onMounted(async () => {
   }
 })
 
-// Sync users from Overseerr
+// Sync users from Seerr
 const handleSyncUsers = async () => {
   try {
     const result = await usersStore.syncUsers()
-    showSuccess('Users Synced', `Successfully synced ${result.count} user${result.count !== 1 ? 's' : ''} from Overseerr`)
+    showSuccess('Users Synced', `Successfully synced ${result.count} user${result.count !== 1 ? 's' : ''} from Seerr`)
   } catch (error: any) {
-    showError('Sync Failed', error.message || 'Failed to sync users from Overseerr')
+    showError('Sync Failed', error.message || 'Failed to sync users from Seerr')
   }
 }
 
@@ -327,7 +327,7 @@ const getDiceBearAvatar = (seed: string): string => {
   return `https://api.dicebear.com/7.x/initials/svg?seed=${encodedSeed}&backgroundColor=${backgroundColor}`
 }
 
-// Convert relative avatar URL to full URL using Overseerr base URL, or use DiceBear as fallback
+// Convert relative avatar URL to full URL using Seerr base URL, or use DiceBear as fallback
 const getAvatarUrl = (avatar: string | null | undefined, user: { id: string; display_name: string }): string => {
   // If we have an avatar, try to use it
   if (avatar) {
@@ -353,7 +353,7 @@ const getAvatarUrl = (avatar: string | null | undefined, user: { id: string; dis
   return getDiceBearAvatar(seed)
 }
 
-// Handle image load errors - fallback to DiceBear if Overseerr avatar fails
+// Handle image load errors - fallback to DiceBear if Seerr avatar fails
 const handleImageError = (event: Event) => {
   const img = event.target as HTMLImageElement
   const userCard = img.closest('[data-user-id]')

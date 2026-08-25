@@ -17,9 +17,9 @@ This comprehensive guide covers advanced deployment patterns, automation scenari
 
 ## 🔄 Multi-Instance Deployments
 
-### Scenario 1: Multiple Overseerr Instances
+### Scenario 1: Multiple Seerr Instances
 
-Deploy ListSync for multiple Overseerr servers:
+Deploy ListSync for multiple Seerr servers:
 
 ```yaml
 # docker-compose-multi.yml
@@ -299,7 +299,7 @@ import requests
 import json
 
 def sync_plex_watchlist_to_overseerr():
-    """Sync Plex watchlist to Overseerr via ListSync"""
+    """Sync Plex watchlist to Seerr via ListSync"""
     
     # Connect to Plex
     plex = PlexServer(PLEX_URL, PLEX_TOKEN)
@@ -525,7 +525,7 @@ def health_check():
         health_status["checks"]["database"] = f"unhealthy: {str(e)}"
         health_status["status"] = "unhealthy"
     
-    # Check Overseerr API
+    # Check Seerr API
     try:
         overseerr_url = os.getenv('OVERSEERR_URL')
         api_key = os.getenv('OVERSEERR_API_KEY')

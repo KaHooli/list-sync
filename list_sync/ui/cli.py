@@ -46,7 +46,7 @@ def validate_provider(list_type: str, list_id: str) -> bool:
 
 def handle_menu_choice(
     choice: str, 
-    overseerr_client,
+    seerr_client,
     run_sync_func: Callable,
     load_list_ids_func: Callable,
     display_lists_func: Callable,
@@ -57,7 +57,7 @@ def handle_menu_choice(
     
     Args:
         choice (str): User's choice
-        overseerr_client: Overseerr API client
+        seerr_client: Seerr API client
         run_sync_func (Callable): Function to run sync
         load_list_ids_func (Callable): Function to load list IDs
         display_lists_func (Callable): Function to display lists
@@ -68,10 +68,10 @@ def handle_menu_choice(
         add_new_lists()
     elif choice == "2":
         # Start sync with saved lists
-        run_sync_func(overseerr_client)
+        run_sync_func(seerr_client)
     elif choice == "3":
         # One-time list sync
-        one_time_list_sync(overseerr_client, run_sync_func)
+        one_time_list_sync(seerr_client, run_sync_func)
     elif choice == "4":
         # Manage existing lists
         manage_lists()
@@ -80,7 +80,7 @@ def handle_menu_choice(
         configure_sync_interval_menu()
     elif choice == "6":
         # Run dry sync
-        run_sync_func(overseerr_client, dry_run=True)
+        run_sync_func(seerr_client, dry_run=True)
     else:
         print(color_gradient("\n❌ Invalid choice. Please try again.", "#ff0000", "#aa0000"))
 
@@ -215,12 +215,12 @@ def add_list_to_sync():
             continue
 
 
-def one_time_list_sync(overseerr_client, run_sync_func):
+def one_time_list_sync(seerr_client, run_sync_func):
     """
     Perform a one-time list sync with provided list IDs.
     
     Args:
-        overseerr_client: Overseerr API client
+        seerr_client: Seerr API client
         run_sync_func: Function to run sync
     """
     print(color_gradient("\n📋  Supported Providers:", "#00aaff", "#00ffaa"))
@@ -337,7 +337,7 @@ def one_time_list_sync(overseerr_client, run_sync_func):
     if temp_lists:
         # Run the sync
         try:
-            run_sync_func(overseerr_client)
+            run_sync_func(seerr_client)
         except Exception as e:
             print(color_gradient(f"\n❌  Error during sync: {e}", "#ff0000", "#aa0000"))
             logging.error(f"Error during sync: {e}")
