@@ -21,6 +21,62 @@ from .utils.logger import DATA_DIR
 # Define paths for config and database
 CONFIG_FILE = os.path.join(DATA_DIR, "config.enc")
 
+# Overseerr and Jellyseerr became Seerr (https://seerr.dev), so the settings
+# are named SEERR_* now. The OVERSEERR_* names still work: an existing install
+# keeps running after an upgrade without anyone editing a .env file.
+LEGACY_ENV_NAMES = {
+    "SEERR_URL": "OVERSEERR_URL",
+    "SEERR_API_KEY": "OVERSEERR_API_KEY",
+    "SEERR_USER_ID": "OVERSEERR_USER_ID",
+    "SEERR_4K": "OVERSEERR_4K",
+}
+
+# Which old names have already been mentioned, so a long-running process says
+# it once rather than on every read.
+_reported_legacy_names = set()
+
+
+def get_seerr_env(name: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Read a SEERR_* setting, accepting its old OVERSEERR_* name.
+
+    The current name wins if both are set, so a half-migrated environment
+    behaves predictably rather than depending on which is read first.
+
+    Args:
+        name (str): The current variable name, such as SEERR_URL
+        default (Optional[str]): Returned when neither name is set
+
+    Returns:
+        Optional[str]: The value, or default
+    """
+    import logging
+
+    # An empty value counts as unset. docker-compose passes ${SEERR_URL:-},
+    # which defines the variable as an empty string when the user has not set
+    # it, and treating that as a real value would shadow the old name and
+    # break the very installs this fallback exists for.
+    def _set(raw):
+        return raw is not None and raw.strip() != ""
+
+    value = os.getenv(name)
+    if _set(value):
+        return value
+
+    legacy_name = LEGACY_ENV_NAMES.get(name)
+    if legacy_name:
+        value = os.getenv(legacy_name)
+        if _set(value):
+            if legacy_name not in _reported_legacy_names:
+                _reported_legacy_names.add(legacy_name)
+                logging.warning(
+                    f"{legacy_name} is the old name for {name}. It still works, "
+                    f"but rename it when convenient - Overseerr is Seerr now."
+                )
+            return value
+
+    return default
+
 def encrypt_config(data, password):
     """
     Encrypt configuration data with a password.
@@ -274,12 +330,12 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
         if os.path.exists('.env'):
             load_dotenv()
             
-        url = os.getenv('OVERSEERR_URL')
-        api_key = os.getenv('OVERSEERR_API_KEY')
-        user_id = os.getenv('OVERSEERR_USER_ID', '1')
+        url = get_seerr_env('SEERR_URL')
+        api_key = get_seerr_env('SEERR_API_KEY')
+        user_id = get_seerr_env('SEERR_USER_ID', '1')
         sync_interval = os.getenv('SYNC_INTERVAL', '12')
         automated_mode = os.getenv('AUTOMATED_MODE', 'true').lower() == 'true'
-        is_4k = os.getenv('OVERSEERR_4K', 'false').lower() == 'true'
+        is_4k = get_seerr_env('SEERR_4K', 'false').lower() == 'true'
         discord_webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
         
         # Log if Discord webhook is configured
@@ -699,10 +755,10 @@ class ConfigManager:
         
         settings_to_migrate = {
             # Overseerr
-            'overseerr_url': os.getenv('OVERSEERR_URL', ''),
-            'overseerr_api_key': os.getenv('OVERSEERR_API_KEY', ''),
-            'overseerr_user_id': os.getenv('OVERSEERR_USER_ID', '1'),
-            'overseerr_4k': os.getenv('OVERSEERR_4K', 'false').lower() == 'true',
+            'overseerr_url': get_seerr_env('SEERR_URL', ''),
+            'overseerr_api_key': get_seerr_env('SEERR_API_KEY', ''),
+            'overseerr_user_id': get_seerr_env('SEERR_USER_ID', '1'),
+            'overseerr_4k': get_seerr_env('SEERR_4K', 'false').lower() == 'true',
             
             # Trakt
             'trakt_client_id': os.getenv('TRAKT_CLIENT_ID', ''),
@@ -755,7 +811,7 @@ class ConfigManager:
             return False
         
         load_dotenv()
-        return bool(os.getenv('OVERSEERR_URL') and os.getenv('OVERSEERR_API_KEY'))
+        return bool(get_seerr_env('SEERR_URL') and get_seerr_env('SEERR_API_KEY'))
     
     def reload(self):
         """Reload configuration from database."""
