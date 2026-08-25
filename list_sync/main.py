@@ -230,11 +230,11 @@ def _is_interactive() -> bool:
 
 def _load_env_config_with_retry(total_seconds: int = 120) -> tuple:
     """
-    Load configuration, waiting for Overseerr to become reachable.
+    Load configuration, waiting for Seerr to become reachable.
 
-    load_env_config() validates the credentials by calling Overseerr and
+    load_env_config() validates the credentials by calling Seerr and
     returns nothing at all if that call fails. On a container restart the
-    Overseerr host is routinely unresolvable for the first few seconds, so a
+    Seerr host is routinely unresolvable for the first few seconds, so a
     single attempt turns a momentary startup ordering issue into a process
     that never syncs again until someone restarts it by hand.
 
@@ -253,19 +253,19 @@ def _load_env_config_with_retry(total_seconds: int = 120) -> tuple:
         url, api_key, user_id, _, _, _ = load_env_config()
         if url and api_key:
             if attempt > 1:
-                logging.info(f"Overseerr became reachable on attempt {attempt}")
+                logging.info(f"Seerr became reachable on attempt {attempt}")
             return url, api_key, user_id
 
         if time.monotonic() >= deadline:
             logging.error(
-                f"Overseerr still unreachable after {total_seconds}s and {attempt} attempts - "
-                f"giving up on this startup. Check that the Overseerr container is running "
+                f"Seerr still unreachable after {total_seconds}s and {attempt} attempts - "
+                f"giving up on this startup. Check that the Seerr container is running "
                 f"and that OVERSEERR_URL points at it."
             )
             return None, None, None
 
         logging.warning(
-            f"Configuration not usable yet (attempt {attempt}) - Overseerr may still be "
+            f"Configuration not usable yet (attempt {attempt}) - Seerr may still be "
             f"starting. Retrying in {delay}s."
         )
         time.sleep(delay)
@@ -274,10 +274,10 @@ def _load_env_config_with_retry(total_seconds: int = 120) -> tuple:
 
 def get_credentials() -> tuple:
     """
-    Get Overseerr API credentials from configuration or user input.
+    Get Seerr API credentials from configuration or user input.
 
     Returns:
-        tuple: Overseerr URL, API key, requester user ID
+        tuple: Seerr URL, API key, requester user ID
     """
     # Check for Docker environment variables first
     url, api_key, user_id = _load_env_config_with_retry()
@@ -297,16 +297,16 @@ def get_credentials() -> tuple:
     # kills the process, which hides the real problem behind a stack trace.
     if not _is_interactive():
         logging.error(
-            "No usable Overseerr configuration and no terminal to prompt on. "
-            "Set OVERSEERR_URL and OVERSEERR_API_KEY, and make sure Overseerr is "
+            "No usable Seerr configuration and no terminal to prompt on. "
+            "Set OVERSEERR_URL and OVERSEERR_API_KEY, and make sure Seerr is "
             "reachable from this container."
         )
         sys.exit(1)
 
     # If no credentials found, prompt user for input
-    print("\n🔑 No saved credentials found. Let's set up your Overseerr connection.")
-    url = custom_input("Enter Overseerr URL (e.g. http://localhost:5055): ")
-    api_key = custom_input("Enter Overseerr API key: ")
+    print("\n🔑 No saved credentials found. Let's set up your Seerr connection.")
+    url = custom_input("Enter Seerr URL (e.g. http://localhost:5055): ")
+    api_key = custom_input("Enter Seerr API key: ")
     
     # Create a client to set requester user
     client = SeerrClient(url, api_key)
@@ -539,7 +539,7 @@ def get_source_lists_from_item(item: Dict[str, Any], list_type: Optional[str] = 
 
 def collect_request_user_ids(source_lists: List[Dict[str, Any]], default_user_id: str) -> List[str]:
     """
-    Collect every distinct Overseerr user that should request this item.
+    Collect every distinct Seerr user that should request this item.
 
     An item can appear on lists belonging to different people. Requesting only
     for the first of them - which is what picking a single requester does -
@@ -567,17 +567,17 @@ def collect_request_user_ids(source_lists: List[Dict[str, Any]], default_user_id
 
 def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run: bool, is_4k: bool = False, list_type: Optional[str] = None, list_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Process a single media item for sync to Overseerr using smart ID-based matching.
+    Process a single media item for sync to Seerr using smart ID-based matching.
     
     Workflow:
     1. Try direct TMDB ID lookup (if available)
     2. Try IMDB ID → Trakt → TMDB ID (if IMDB ID available)
     3. Try Title/Year → Trakt → TMDB ID
-    4. Fallback to Overseerr title search (less reliable)
+    4. Fallback to Seerr title search (less reliable)
     
     Args:
         item (Dict[str, Any]): Media item to process
-        seerr_client (SeerrClient): Overseerr API client
+        seerr_client (SeerrClient): Seerr API client
         dry_run (bool): Whether to perform a dry run
         is_4k (bool, optional): Whether to request 4K. Defaults to False.
         
@@ -721,9 +721,9 @@ def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run:
             else:
                 logging.info(f"⚠️  Trakt could not find TMDB ID for '{search_title}' ({year})")
         
-        # METHOD 5: Fallback to Overseerr title search (least reliable)
+        # METHOD 5: Fallback to Seerr title search (least reliable)
         if not search_result:
-            logging.warning(f"⚠️  METHOD 5: Falling back to Overseerr title search (less reliable)")
+            logging.warning(f"⚠️  METHOD 5: Falling back to Seerr title search (less reliable)")
             search_result = seerr_client.search_media(
                 search_title,  # Use cleaned title for search
                 media_type,
@@ -740,7 +740,7 @@ def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run:
             try:
                 overseerr_id = int(overseerr_id)
             except (ValueError, TypeError):
-                logging.error(f"Invalid Overseerr ID format: {overseerr_id} (type: {type(overseerr_id)})")
+                logging.error(f"Invalid Seerr ID format: {overseerr_id} (type: {type(overseerr_id)})")
                 return {"title": title, "status": "error", "year": year, "media_type": media_type}
             
             logging.info(f"📊 MATCH SUMMARY: Method={match_method}, Overseerr_ID={overseerr_id}")
@@ -756,10 +756,10 @@ def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run:
                 logging.error(f"❌ CRITICAL: No source lists found for item '{title}'! _source_lists={item.get('_source_lists')}, _source_list_type={item.get('_source_list_type')}, _source_list_id={item.get('_source_list_id')}, list_type={list_type}, list_id={list_id}")
                 # Don't proceed without list information - this will cause items to not be linked to lists
 
-            # Determine which Overseerr user(s) to request as - an item that
+            # Determine which Seerr user(s) to request as - an item that
             # appears on several people's lists needs a request for each of them
             requester_user_ids = collect_request_user_ids(source_lists, seerr_client.requester_user_id)
-            logging.info(f"🙋 Requesting '{title}' as Overseerr user(s): {', '.join(requester_user_ids)}")
+            logging.info(f"🙋 Requesting '{title}' as Seerr user(s): {', '.join(requester_user_ids)}")
 
             # Check if we should skip this item based on last sync time
             if not should_sync_item(overseerr_id):
@@ -769,7 +769,7 @@ def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run:
                     save_sync_result(title, media_type, imdb_id, overseerr_id, "skipped", year, tmdb_id, source_list['type'], source_list['id'])
                 return {"title": title, "status": "skipped", "year": year, "media_type": media_type}
 
-            logging.info(f"🔍 Checking media status in Overseerr...")
+            logging.info(f"🔍 Checking media status in Seerr...")
             media_state = seerr_client.get_media_state(overseerr_id, search_result["mediaType"], is_4k)
             is_available = media_state["is_available"]
             number_of_seasons = media_state["number_of_seasons"]
@@ -817,7 +817,7 @@ def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run:
                 statuses.append(request_status)
 
             # A request landing for any user counts as a sync; the per-user
-            # failures are already logged with the reason Overseerr gave.
+            # failures are already logged with the reason Seerr gave.
             if "success" in statuses:
                 failed = statuses.count("error")
                 if failed:
@@ -872,7 +872,7 @@ def verify_list_requesters(synced_lists: List[Dict[str, Any]], seerr_client: See
     """
     Check every user the lists in this sync will request as, before processing.
 
-    Without this, a user that Overseerr rejects shows up only as a wall of
+    Without this, a user that Seerr rejects shows up only as a wall of
     per-item failures, with nothing naming the list or the user at fault.
 
     Args:
@@ -892,7 +892,7 @@ def verify_list_requesters(synced_lists: List[Dict[str, Any]], seerr_client: See
         try:
             usable, reason = seerr_client.validate_requester(user_id)
         except Exception as e:
-            logging.warning(f"Could not verify Overseerr user {user_id}: {e}")
+            logging.warning(f"Could not verify Seerr user {user_id}: {e}")
             continue
 
         lists_desc = ", ".join(list_labels)
@@ -914,11 +914,11 @@ def sync_media_to_overseerr(
     session_id: Optional[str] = None
 ) -> SyncResults:
     """
-    Sync media items to Overseerr using ThreadPoolExecutor for concurrent processing.
+    Sync media items to Seerr using ThreadPoolExecutor for concurrent processing.
     
     Args:
         media_items (List[Dict[str, Any]]): List of media items to sync
-        seerr_client (SeerrClient): Overseerr API client
+        seerr_client (SeerrClient): Seerr API client
         synced_lists (List[Dict[str, str]], optional): List of synced list information. Defaults to None.
         is_4k (bool, optional): Whether to request 4K. Defaults to False.
         dry_run (bool, optional): Whether to perform a dry run. Defaults to False.
@@ -1103,7 +1103,7 @@ def automated_sync(
     Run automated sync at specified intervals.
     
     Args:
-        seerr_client (SeerrClient): Overseerr API client
+        seerr_client (SeerrClient): Seerr API client
         initial_interval_hours (float): Initial sync interval in hours (can be decimal like 0.5)
         is_4k (bool, optional): Whether to request 4K. Defaults to False.
         automated_mode (bool, optional): Whether to run in automated mode. Defaults to True.
@@ -1510,7 +1510,7 @@ def run_sync(
     Run a sync operation.
     
     Args:
-        seerr_client (SeerrClient): Overseerr API client
+        seerr_client (SeerrClient): Seerr API client
         dry_run (bool, optional): Whether to perform a dry run. Defaults to False.
         is_4k (bool, optional): Whether to request 4K. Defaults to False.
         automated_mode (bool, optional): Whether to run in automated mode. Defaults to False.
@@ -1638,8 +1638,8 @@ def sync_single_list(
     Args:
         list_type (str): Type of list (e.g., 'imdb', 'trakt')
         list_id (str): ID of the specific list to sync
-        seerr_url (str): Overseerr URL
-        seerr_api_key (str): Overseerr API key
+        seerr_url (str): Seerr URL
+        seerr_api_key (str): Seerr API key
         user_id (Optional[str]): User ID for requests (if None, will be fetched from database)
         is_4k (bool): Whether to request 4K versions
         dry_run (bool): Whether to run in dry-run mode
@@ -1697,7 +1697,7 @@ def sync_single_list(
                         f"List {list_type}:{list_id} not found in database, using default user_id: 1"
                     )
 
-            # Create Overseerr client with the appropriate user_id
+            # Create Seerr client with the appropriate user_id
             seerr_client = SeerrClient(seerr_url, seerr_api_key, user_id)
 
             # Check the requester up front so a misconfigured user produces one
@@ -1729,7 +1729,7 @@ def sync_single_list(
                 end_sync_in_db(session_id=session_id, status='no_items')
                 return result
             
-            # Sync the media items to Overseerr
+            # Sync the media items to Seerr
             sync_results = sync_media_to_overseerr(
                 media_items=media_items,
                 seerr_client=seerr_client,
@@ -1900,8 +1900,8 @@ def main():
         try:
             seerr_client.test_connection()
         except Exception as e:
-            logging.error(f"Failed to connect to Overseerr: {str(e)}")
-            print(f"\n❌ Failed to connect to Overseerr: {str(e)}")
+            logging.error(f"Failed to connect to Seerr: {str(e)}")
+            print(f"\n❌ Failed to connect to Seerr: {str(e)}")
             if os.path.exists(CONFIG_FILE):
                 if custom_input("\n🗑️  Delete the current config and start over? (y/n): ").lower() == "y":
                     os.remove(CONFIG_FILE)

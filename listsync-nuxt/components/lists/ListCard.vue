@@ -66,7 +66,7 @@
             <select
               :value="list.user_id || '1'"
               :disabled="isUpdatingUser || usersStore.users.length === 0"
-              aria-label="Overseerr user this list requests as"
+              aria-label="Seerr user this list requests as"
               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
               @click.stop
               @change="handleUserChange"

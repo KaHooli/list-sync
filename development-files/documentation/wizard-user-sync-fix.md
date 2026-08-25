@@ -3,12 +3,12 @@
 ## 🐛 Problem Identified
 
 ### Issue Description
-During the setup wizard, when clicking "Sync Users from Overseerr", the following error occurred:
+During the setup wizard, when clicking "Sync Users from Seerr", the following error occurred:
 
 ```
 POST http://localhost:3222/api/overseerr/users/sync
 Status: 400 Bad Request
-Response: {"detail":"Overseerr URL and API key must be configured"}
+Response: {"detail":"Seerr URL and API key must be configured"}
 ```
 
 ### Root Cause Analysis
@@ -114,7 +114,7 @@ This clearly indicates that:
    ├── URL: https://overseerr.example.com
    └── API Key: *********************
 
-2. USER CLICKS "Sync Users from Overseerr"
+2. USER CLICKS "Sync Users from Seerr"
    │
    ├─→ 3. TEST CONNECTION
    │   POST /api/setup/test/overseerr
@@ -129,7 +129,7 @@ This clearly indicates that:
    └─→ 5. SYNC USERS
        POST /api/overseerr/users/sync
        ├── Read credentials from database ✅
-       ├── Fetch users from Overseerr
+       ├── Fetch users from Seerr
        ├── Save users to overseerr_users table
        └── Display user cards ✅
 ```
@@ -152,7 +152,7 @@ Content-Type: application/json
 Response: 200 OK
 {
   "valid": true,
-  "message": "Overseerr connection successful",
+  "message": "Seerr connection successful",
   "version": "2.7.3",
   "user": { ... }
 }
@@ -202,7 +202,7 @@ Response: 200 OK
 ## 🎯 What This Fixes
 
 ### Before Fix
-❌ "Sync Users from Overseerr" button fails silently or with cryptic error  
+❌ "Sync Users from Seerr" button fails silently or with cryptic error  
 ❌ Users can't complete setup wizard  
 ❌ Credentials not saved until Step 2  
 
@@ -227,7 +227,7 @@ Response: 200 OK
    - URL: `https://your-overseerr.com`
    - API Key: `your-api-key`
 
-3. **Click "Sync Users from Overseerr"**
+3. **Click "Sync Users from Seerr"**
 
 4. **Verify success**
    - ✅ See "Connected & Credentials Saved"
@@ -236,11 +236,11 @@ Response: 200 OK
 
 ### Expected Console Output
 ```
-Testing Overseerr with URL: https://... API Key: ***
+Testing Seerr with URL: https://... API Key: ***
 Saving credentials to config before syncing users...
 Credentials saved to config successfully
-Overseerr validation successful, now fetching users...
-Fetching Overseerr users...
+Seerr validation successful, now fetching users...
+Fetching Seerr users...
 Fetched 3 users: [...]
 ```
 
@@ -283,7 +283,7 @@ SELECT id, display_name, email FROM overseerr_users;
 
 ### 2. Error Messages
 **Before:** Generic "Missing Information"  
-**After:** Specific "Please enter: Overseerr URL and API Key"
+**After:** Specific "Please enter: Seerr URL and API Key"
 
 ### 3. Console Logging
 Added comprehensive logging for debugging:

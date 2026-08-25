@@ -240,7 +240,7 @@ def display_summary(sync_results: SyncResults):
 
 def display_welcome_message():
     """Display the welcome message."""
-    print(color_gradient("👋  Welcome to the List to Overseerr Sync Tool!", "#00aaff", "#00ffaa") + "\n")
+    print(color_gradient("👋  Welcome to the List to Seerr Sync Tool!", "#00aaff", "#00ffaa") + "\n")
 
 def display_config_message(source: str):
     """Display configuration source message."""

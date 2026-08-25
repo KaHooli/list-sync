@@ -1,6 +1,6 @@
 # ListSync Documentation
 
-Welcome to the comprehensive documentation for ListSync - an automated media list synchronization tool that seamlessly syncs watchlists from various online platforms to your Overseerr or Jellyseerr instance.
+Welcome to the comprehensive documentation for ListSync - an automated media list synchronization tool that seamlessly syncs watchlists from various online platforms to your Seerr or Jellyseerr instance.
 
 ## 🚀 Quick Start
 
@@ -57,7 +57,7 @@ flowchart TD
     Q5 --> Success[✅ Ready to sync!]
     
     Full --> F1[1. Choose deployment method]
-    F1 --> F2[2. Configure Overseerr connection]
+    F1 --> F2[2. Configure Seerr connection]
     F2 --> F3[3. Add multiple lists]
     F3 --> F4[4. Set up automation]
     F4 --> F5[5. Configure notifications]
@@ -189,8 +189,8 @@ DISCORD_WEBHOOK_URL=your-webhook-url
 | Issue | Quick Fix | Full Guide |
 |-------|-----------|------------|
 | Can't access dashboard | Check port 3222, restart container | [Troubleshooting](troubleshooting.md#web-interface-issues) |
-| Sync not working | Check Overseerr connection, verify lists | [Troubleshooting](troubleshooting.md#sync-issues) |
-| All items "already available" | Check 4K settings, verify Overseerr | [Troubleshooting](troubleshooting.md#already-available-for-everything) |
+| Sync not working | Check Seerr connection, verify lists | [Troubleshooting](troubleshooting.md#sync-issues) |
+| All items "already available" | Check 4K settings, verify Seerr | [Troubleshooting](troubleshooting.md#already-available-for-everything) |
 | High memory usage | Reduce list limits, increase sync interval | [Troubleshooting](troubleshooting.md#performance-problems) |
 
 ## 🔄 What's New
@@ -218,7 +218,7 @@ DISCORD_WEBHOOK_URL=your-webhook-url
 ### Performance Characteristics
 - **IMDb Lists**: 50-100 items per minute
 - **Trakt Lists**: 30-80 items per minute
-- **API Requests**: Limited by Overseerr rate limits
+- **API Requests**: Limited by Seerr rate limits
 - **Database**: 1000+ operations per second
 
 ### Scaling Options

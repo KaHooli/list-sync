@@ -38,7 +38,7 @@ flowchart TD
     
     SyncIssue --> CheckLists{Lists configured?}
     CheckLists -->|No| AddLists[Add lists via<br/>web UI or .env]
-    CheckLists -->|Yes| CheckOverseerr{Overseerr connected?}
+    CheckLists -->|Yes| CheckOverseerr{Seerr connected?}
     CheckOverseerr -->|No| FixConnection[Fix connection<br/>see Connection Problems]
     CheckOverseerr -->|Yes| CheckItems[Check for errors<br/>in specific items]
     
@@ -81,7 +81,7 @@ docker-compose ps
 # 3. Check logs for errors
 docker-compose logs --tail=50 listsync-full
 
-# 4. Verify Overseerr connection
+# 4. Verify Seerr connection
 curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
 ```
 
@@ -91,7 +91,7 @@ curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
 |-----------|---------|-----------|---------------|
 | **Database** | ✅ Connected | ❌ Connection failed | `curl localhost:4222/api/system/health` |
 | **Process** | ✅ Running | ❌ Not running | `docker-compose ps` |
-| **Overseerr** | ✅ Connected | ❌ Connection failed | `curl -H "X-Api-Key: key" http://overseerr-url/api/v1/status` |
+| **Seerr** | ✅ Connected | ❌ Connection failed | `curl -H "X-Api-Key: key" http://overseerr-url/api/v1/status` |
 | **Web UI** | ✅ Accessible | ❌ Not loading | `curl -I localhost:3222` |
 | **API** | ✅ Responding | ❌ Not responding | `curl localhost:4222/api/system/health` |
 
@@ -156,14 +156,14 @@ sqlite3 data/list_sync.db "SELECT * FROM lists;"
 
 #### Causes
 - Items already exist in your media library
-- Overseerr has different availability rules
+- Seerr has different availability rules
 - 4K vs standard quality mismatch
 - Cached data showing outdated status
 
 #### Solutions
 
-**1. Check Overseerr Directly**
-- Log into Overseerr web interface
+**1. Check Seerr Directly**
+- Log into Seerr web interface
 - Search for the specific titles
 - Verify their actual status
 - Check if they're already requested or available
@@ -255,15 +255,15 @@ df -h
 
 ```mermaid
 flowchart TD
-    Start[Cannot Connect to Overseerr] --> TestURL{Can you access<br/>Overseerr URL<br/>in browser?}
+    Start[Cannot Connect to Seerr] --> TestURL{Can you access<br/>Seerr URL<br/>in browser?}
     
-    TestURL -->|No| CheckOverseerr[Overseerr is down<br/>or URL is wrong]
+    TestURL -->|No| CheckOverseerr[Seerr is down<br/>or URL is wrong]
     TestURL -->|Yes| TestAPI{Does API<br/>endpoint work?}
     
     TestAPI -->|No| CheckAPIKey{Is API key valid?}
-    TestAPI -->|Yes| CheckFromContainer{Can container<br/>reach Overseerr?}
+    TestAPI -->|Yes| CheckFromContainer{Can container<br/>reach Seerr?}
     
-    CheckAPIKey -->|No| GetNewKey[Get new API key from<br/>Overseerr Settings]
+    CheckAPIKey -->|No| GetNewKey[Get new API key from<br/>Seerr Settings]
     CheckAPIKey -->|Yes| CheckFormat{Is URL format<br/>correct?}
     
     CheckFormat -->|No| FixFormat[Add http:// or https://<br/>Remove trailing slash]
@@ -272,7 +272,7 @@ flowchart TD
     CheckFromContainer -->|No| FixDockerNet[Check Docker network<br/>Use container name<br/>or host.docker.internal]
     CheckFromContainer -->|Yes| Success[Connection OK!<br/>Check other issues]
     
-    CheckOverseerr --> FixOverseerr[Start Overseerr<br/>Verify URL in .env]
+    CheckOverseerr --> FixOverseerr[Start Seerr<br/>Verify URL in .env]
     GetNewKey --> UpdateEnv[Update .env with<br/>new API key]
     FixFormat --> UpdateEnv
     UpdateEnv --> Restart[Restart ListSync<br/>docker-compose restart]
@@ -287,13 +287,13 @@ flowchart TD
     style Restart fill:#4CAF50
 ```
 
-### Cannot Connect to Overseerr
+### Cannot Connect to Seerr
 
 #### Error Messages
 - "Connection refused"
 - "Host unreachable"
 - "Invalid API key"
-- "Timeout connecting to Overseerr"
+- "Timeout connecting to Seerr"
 
 #### Debugging Steps
 
@@ -311,7 +311,7 @@ curl -H "X-Api-Key: your-key" http://your-overseerr-url/api/v1/status
 
 **2. Check API Key**
 ```bash
-# Get API key from Overseerr
+# Get API key from Seerr
 # Settings → General → API Key
 
 # Test in browser
@@ -335,7 +335,7 @@ OVERSEERR_URL=overseerr.yourdomain.com/  # ❌ (trailing slash)
 
 **4. Docker Networking**
 ```bash
-# If Overseerr is also in Docker
+# If Seerr is also in Docker
 OVERSEERR_URL=http://overseerr:5055  # Use container name
 
 # Check Docker network
@@ -439,13 +439,13 @@ flowchart TD
     CheckFormat -->|No| FixFormat[Check documentation<br/>for correct format]
     CheckFormat -->|Yes| CheckSelenium[Check Selenium/Chrome<br/>in container logs]
     
-    RequestFail --> CheckOverseerr{Overseerr<br/>connected?}
-    CheckOverseerr -->|No| FixOverseerr[Fix Overseerr connection<br/>See Connection Problems]
-    CheckOverseerr -->|Yes| CheckMatching{Items found<br/>in Overseerr?}
+    RequestFail --> CheckOverseerr{Seerr<br/>connected?}
+    CheckOverseerr -->|No| FixOverseerr[Fix Seerr connection<br/>See Connection Problems]
+    CheckOverseerr -->|Yes| CheckMatching{Items found<br/>in Seerr?}
     CheckMatching -->|No| MatchingIssue[Title matching issue<br/>Check year/title format]
     CheckMatching -->|Yes| CheckLogs[Check logs for<br/>specific errors]
     
-    AlreadyAvail --> VerifyOverseerr[Check items in<br/>Overseerr directly]
+    AlreadyAvail --> VerifyOverseerr[Check items in<br/>Seerr directly]
     VerifyOverseerr --> TrueAvail{Actually available?}
     TrueAvail -->|Yes| Working[Working as expected!<br/>Items already in library]
     TrueAvail -->|No| ClearCache[Clear cache:<br/>docker-compose restart]
@@ -580,10 +580,10 @@ sqlite3 data/list_sync.db "PRAGMA database_list;"
 
 #### Debugging
 
-**1. Check Overseerr Search**
-- Manually search for failing titles in Overseerr
+**1. Check Seerr Search**
+- Manually search for failing titles in Seerr
 - Note any differences in title format
-- Check if items exist in Overseerr database
+- Check if items exist in Seerr database
 
 **2. Enable Debug Logging**
 ```bash

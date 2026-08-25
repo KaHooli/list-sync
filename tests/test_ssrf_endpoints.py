@@ -81,7 +81,7 @@ for target, name in [
     check(f"overseerr test blocks {name}", blocked, True)
 
 print()
-print("=== a private Overseerr must still be permitted ===")
+print("=== a private Seerr must still be permitted ===")
 # 'seerr' resolves on the user's Docker network, not in this container, so
 # stand in a resolver that answers the way theirs does.
 from list_sync.utils import url_safety as us

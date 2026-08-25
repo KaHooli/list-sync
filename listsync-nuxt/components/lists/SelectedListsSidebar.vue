@@ -311,7 +311,7 @@ const generateDiceBearAvatar = (seed: string): string => {
   return `https://api.dicebear.com/7.x/initials/svg?seed=${encodedSeed}&backgroundColor=9333ea`
 }
 
-// Get avatar URL - use Overseerr avatar if available, otherwise DiceBear
+// Get avatar URL - use Seerr avatar if available, otherwise DiceBear
 const getAvatarUrl = (user: User): string => {
   const avatar = user.avatar
   
@@ -326,7 +326,7 @@ const getAvatarUrl = (user: User): string => {
       return avatar
     }
     
-    // If relative URL and we have Overseerr URL, convert to full URL
+    // If relative URL and we have Seerr URL, convert to full URL
     if (props.overseerrUrl && avatar.startsWith('/')) {
       const cleanBaseUrl = props.overseerrUrl.replace(/\/$/, '')
       return `${cleanBaseUrl}${avatar}`

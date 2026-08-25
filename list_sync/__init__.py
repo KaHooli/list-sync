@@ -1,5 +1,5 @@
 """
-ListSync - A tool for syncing media lists to Overseerr.
+ListSync - A tool for syncing media lists to Seerr.
 
 Authors: Soluify Team
 Version: 0.6.7

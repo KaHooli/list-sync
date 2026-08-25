@@ -584,7 +584,7 @@ watch(() => props.modelValue, async (newValue, oldValue) => {
         usersStore.fetchUsers()
       ])
       
-      // Store Overseerr URL for avatar images
+      // Store Seerr URL for avatar images
       if (config.overseerr_url) {
         overseerrUrl.value = config.overseerr_url
       }

@@ -76,7 +76,7 @@ ListSync interacts with various platforms, each with their own terms:
 - **Trakt**: Subject to Trakt's Terms of Service
 - **Letterboxd**: Subject to Letterboxd's Terms of Service
 - **MDBList**: Subject to MDBList's Terms of Service
-- **Overseerr/Jellyseerr**: Subject to their respective terms
+- **Seerr**: Subject to their respective terms
 
 ### User Responsibility
 

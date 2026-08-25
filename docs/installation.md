@@ -32,7 +32,7 @@ This guide provides detailed installation instructions for ListSync, covering bo
   - Internet connection
 
 ### Common Requirements
-- **Overseerr Instance**: Running and accessible
+- **Seerr Instance**: Running and accessible
 - **Network Access**: To IMDb, Trakt, Letterboxd, MDBList, and other list providers
 
 ## 🐳 Docker Installation (Recommended)
@@ -349,7 +349,7 @@ pm2 startup
 
 ### Initial Configuration
 
-1. **Test Overseerr connection**:
+1. **Test Seerr connection**:
    ```bash
    # Using curl
    curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
@@ -431,7 +431,7 @@ flowchart TD
     TestDashboard --> OpenBrowser[Open localhost:3222<br/>in browser]
     OpenBrowser --> DashWorks{Dashboard loads?}
     DashWorks -->|No| CheckFrontend[Check port 3222<br/>Check frontend logs]
-    DashWorks -->|Yes| TestOverseerr[Test Overseerr Connection]
+    DashWorks -->|Yes| TestOverseerr[Test Seerr Connection]
     
     TestOverseerr --> ConfigOverseerr[Check .env:<br/>OVERSEERR_URL<br/>OVERSEERR_API_KEY]
     ConfigOverseerr --> ConnTest{Connection OK<br/>in dashboard?}
@@ -619,7 +619,7 @@ npm install
 
 ### Network Issues
 
-**Cannot connect to Overseerr**:
+**Cannot connect to Seerr**:
 ```bash
 # Test connectivity
 curl -v http://your-overseerr-url/api/v1/status

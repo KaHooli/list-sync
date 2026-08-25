@@ -3,18 +3,18 @@
     <!-- Step Header -->
     <div class="text-center mb-3 sm:mb-4 animate-fade-in">
       <h2 id="step1-heading" class="text-lg sm:text-xl font-bold text-foreground mb-1.5 titillium-web-bold">
-        Connect to Overseerr
+        Connect to Seerr
       </h2>
       <p class="text-xs sm:text-sm text-muted-foreground max-w-xl mx-auto">
-        Link your Overseerr instance and select the default user for managing your lists.
+        Link your Seerr instance and select the default user for managing your lists.
       </p>
     </div>
 
-    <!-- Overseerr Section -->
+    <!-- Seerr Section -->
     <div class="p-3 sm:p-4 rounded-lg bg-gradient-to-br from-purple-600/20 to-purple-500/10 border border-purple-500/25 space-y-2.5 sm:space-y-3" role="group" aria-labelledby="overseerr-section">
       <div class="flex items-center gap-2">
         <component :is="ServerIcon" :size="16" class="text-purple-400" aria-hidden="true" />
-        <span id="overseerr-section" class="text-xs font-bold text-purple-300 uppercase tracking-wide">Overseerr</span>
+        <span id="overseerr-section" class="text-xs font-bold text-purple-300 uppercase tracking-wide">Seerr</span>
       </div>
       
       <div>
@@ -79,7 +79,7 @@
           :loading="isFetchingUsers || isTestingOverseerr"
           @click="handleSyncUsers"
           class="min-w-[220px] shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 transition-all"
-          :aria-label="'Test connection and sync users from Overseerr'"
+          :aria-label="'Test connection and sync users from Seerr'"
         >
           {{ (isFetchingUsers || isTestingOverseerr) ? 'Connecting...' : 'Test Connection & Sync Users' }}
         </Button>
@@ -230,7 +230,7 @@
         <div>
           <p class="text-sm font-medium text-foreground mb-1">No Users Found</p>
           <p class="text-xs text-muted-foreground">
-            We couldn't find any users from your Overseerr instance.
+            We couldn't find any users from your Seerr instance.
           </p>
         </div>
         <Button
@@ -426,8 +426,8 @@ const getDiceBearAvatar = (seed: string): string => {
   return `https://api.dicebear.com/7.x/initials/svg?seed=${encodedSeed}&backgroundColor=${backgroundColor}`
 }
 
-// Get avatar URL - use Overseerr avatar if available, otherwise DiceBear
-// Handles both full URLs and relative URLs (converts relative to full using Overseerr base URL)
+// Get avatar URL - use Seerr avatar if available, otherwise DiceBear
+// Handles both full URLs and relative URLs (converts relative to full using Seerr base URL)
 const getAvatarUrl = (user: any): string => {
   const avatar = user.avatar
   
@@ -443,7 +443,7 @@ const getAvatarUrl = (user: any): string => {
       return avatar
     }
     
-    // If relative URL and we have Overseerr URL, convert to full URL
+    // If relative URL and we have Seerr URL, convert to full URL
     const overseerrUrl = localValue.value?.overseerr_url
     if (overseerrUrl && avatar.startsWith('/')) {
       const cleanBaseUrl = overseerrUrl.replace(/\/$/, '')
@@ -456,7 +456,7 @@ const getAvatarUrl = (user: any): string => {
   return getDiceBearAvatar(seed)
 }
 
-// Fetch users from Overseerr
+// Fetch users from Seerr
 const fetchOverseerrUsers = async () => {
   if (!localValue.value) {
     console.warn('Cannot fetch users: localValue is not initialized')
@@ -467,7 +467,7 @@ const fetchOverseerrUsers = async () => {
   usersFetchError.value = ''
   
   try {
-    console.log('Fetching Overseerr users...')
+    console.log('Fetching Seerr users...')
     const response: any = await api.syncOverseerrUsers()
     
     console.log('Users sync response:', response)
@@ -592,7 +592,7 @@ const handleSyncUsers = async () => {
   
   if (!url || !apiKey) {
     const missing = []
-    if (!url) missing.push('Overseerr URL')
+    if (!url) missing.push('Seerr URL')
     if (!apiKey) missing.push('API Key')
     showError('Missing Information', `Please enter: ${missing.join(' and ')}`)
     return
@@ -602,11 +602,11 @@ const handleSyncUsers = async () => {
   const isValid = await testOverseerr()
   
   if (!isValid) {
-    showError('Connection Failed', 'Please check your Overseerr URL and API Key')
+    showError('Connection Failed', 'Please check your Seerr URL and API Key')
   }
 }
 
-// Test Overseerr connection
+// Test Seerr connection
 const testOverseerr = async () => {
   // Get fresh values directly from the input (don't rely on cached localValue)
   if (!localValue.value) return false
@@ -630,7 +630,7 @@ const testOverseerr = async () => {
   
   try {
     // Use fresh values directly - ensure we're not using stale data
-    console.log('Testing Overseerr with URL:', url, 'API Key:', apiKey ? '***' : 'MISSING')
+    console.log('Testing Seerr with URL:', url, 'API Key:', apiKey ? '***' : 'MISSING')
     
     const result: any = await api.testOverseerrConnection({
       overseerr_url: url,
@@ -663,7 +663,7 @@ const testOverseerr = async () => {
       validationSteps.value.overseerr.fetchingUser = 'success'
       overseerrValidated.value = true
       
-      console.log('Overseerr validation successful, now fetching users...')
+      console.log('Seerr validation successful, now fetching users...')
       
       // Now fetch users - credentials are in database so sync endpoint will work
       await fetchOverseerrUsers()
@@ -673,16 +673,16 @@ const testOverseerr = async () => {
       validationSteps.value.overseerr.connecting = 'error'
       validationSteps.value.overseerr.fetchingUser = 'error'
       overseerrValidated.value = false
-      console.error('Overseerr validation failed:', result.error)
-      showError('Overseerr Connection Failed', result.error || 'Could not connect to Overseerr')
+      console.error('Seerr validation failed:', result.error)
+      showError('Seerr Connection Failed', result.error || 'Could not connect to Seerr')
       return false
     }
   } catch (error: any) {
     validationSteps.value.overseerr.connecting = 'error'
     validationSteps.value.overseerr.fetchingUser = 'error'
     overseerrValidated.value = false
-    console.error('Overseerr test error:', error)
-    showError('Overseerr Connection Failed', error.message || 'Failed to test Overseerr connection')
+    console.error('Seerr test error:', error)
+    showError('Seerr Connection Failed', error.message || 'Failed to test Seerr connection')
     return false
   } finally {
     isTestingOverseerr.value = false
@@ -722,13 +722,13 @@ const handleNext = async () => {
     apiKey: apiKey ? '***' : 'MISSING'
   })
   
-  // Always validate Overseerr when clicking Continue
+  // Always validate Seerr when clicking Continue
   // Use fresh values - test function will get them directly from localValue
   const overseerrResult = await testOverseerr()
   
   console.log('Validation results:', { overseerrResult })
   
-  // Only proceed if Overseerr is validated
+  // Only proceed if Seerr is validated
   // The parent component will do a final validation when saving
   if (overseerrResult) {
     // Clear any errors before proceeding
@@ -741,7 +741,7 @@ const handleNext = async () => {
     emit('next')
   } else {
     // Build specific error message
-    const errorMsg = 'Overseerr validation failed. Please check your Overseerr URL and API key.'
+    const errorMsg = 'Seerr validation failed. Please check your Seerr URL and API key.'
     console.error('Validation failed:', errorMsg)
     showError('Validation Failed', errorMsg)
   }

@@ -217,7 +217,7 @@ SOFTWARE.
 ### Service Dependencies
 
 #### External Services
-- **Overseerr/Jellyseerr**: Media request management
+- **Seerr**: Media request management
 - **IMDb**: Movie and TV show information
 - **Trakt**: Media tracking and lists
 - **Letterboxd**: Movie reviews and lists

@@ -37,7 +37,7 @@ flowchart TD
     
     SyncIssue --> CheckLists{Lists configured?}
     CheckLists -->|No| AddLists[Add lists via<br/>web UI or .env]
-    CheckLists -->|Yes| CheckOverseerr{Overseerr connected?}
+    CheckLists -->|Yes| CheckOverseerr{Seerr connected?}
     CheckOverseerr -->|No| FixConnection[Fix connection<br/>see Connection Problems]
     CheckOverseerr -->|Yes| CheckItems[Check for errors<br/>in specific items]
     
@@ -74,7 +74,7 @@ docker-compose ps
 # 3. Check logs for errors
 docker-compose logs --tail=50 listsync-full
 
-# 4. Verify Overseerr connection
+# 4. Verify Seerr connection
 curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
 ```
 
@@ -84,7 +84,7 @@ curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
 |-----------|---------|-----------|--------|
 | **Database** | ✅ Connected | ❌ Connection failed | File exists, writable |
 | **Process** | ✅ Running | ❌ Not running | ListSync process active |
-| **Overseerr** | ✅ Connected | ❌ Connection failed | API key valid, URL accessible |
+| **Seerr** | ✅ Connected | ❌ Connection failed | API key valid, URL accessible |
 | **Web UI** | ✅ Accessible | ❌ Not loading | Port 3222 accessible |
 | **API** | ✅ Responding | ❌ Not responding | Port 4222 accessible |
 
@@ -127,12 +127,12 @@ curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
 
 **Causes**:
 - Items already exist in your media library
-- Overseerr has different availability rules
+- Seerr has different availability rules
 - 4K vs standard quality mismatch
 
 **Solutions**:
-1. **Check Overseerr directly**:
-   - Log into Overseerr web interface
+1. **Check Seerr directly**:
+   - Log into Seerr web interface
    - Search for the specific titles
    - Verify their actual status
 
@@ -187,15 +187,15 @@ curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
 
 ```mermaid
 flowchart TD
-    Start[Cannot Connect to Overseerr] --> TestURL{Can you access<br/>Overseerr URL<br/>in browser?}
+    Start[Cannot Connect to Seerr] --> TestURL{Can you access<br/>Seerr URL<br/>in browser?}
     
-    TestURL -->|No| CheckOverseerr[Overseerr is down<br/>or URL is wrong]
+    TestURL -->|No| CheckOverseerr[Seerr is down<br/>or URL is wrong]
     TestURL -->|Yes| TestAPI{Does API<br/>endpoint work?}
     
     TestAPI -->|No| CheckAPIKey{Is API key valid?}
-    TestAPI -->|Yes| CheckFromContainer{Can container<br/>reach Overseerr?}
+    TestAPI -->|Yes| CheckFromContainer{Can container<br/>reach Seerr?}
     
-    CheckAPIKey -->|No| GetNewKey[Get new API key from<br/>Overseerr Settings]
+    CheckAPIKey -->|No| GetNewKey[Get new API key from<br/>Seerr Settings]
     CheckAPIKey -->|Yes| CheckFormat{Is URL format<br/>correct?}
     
     CheckFormat -->|No| FixFormat[Add http:// or https://<br/>Remove trailing slash]
@@ -204,7 +204,7 @@ flowchart TD
     CheckFromContainer -->|No| FixDockerNet[Check Docker network<br/>Use container name<br/>or host.docker.internal]
     CheckFromContainer -->|Yes| Success[Connection OK!<br/>Check other issues]
     
-    CheckOverseerr --> FixOverseerr[Start Overseerr<br/>Verify URL in .env]
+    CheckOverseerr --> FixOverseerr[Start Seerr<br/>Verify URL in .env]
     GetNewKey --> UpdateEnv[Update .env with<br/>new API key]
     FixFormat --> UpdateEnv
     UpdateEnv --> Restart[Restart ListSync<br/>docker-compose restart]
@@ -219,7 +219,7 @@ flowchart TD
     style Restart fill:#4CAF50
 ```
 
-### Cannot Connect to Overseerr
+### Cannot Connect to Seerr
 
 **Error Messages**:
 - "Connection refused"
@@ -239,7 +239,7 @@ flowchart TD
 
 2. **Check API key**:
    ```bash
-   # Get API key from Overseerr
+   # Get API key from Seerr
    # Settings → General → API Key
    
    # Test in browser
@@ -258,7 +258,7 @@ flowchart TD
 
 4. **Docker networking**:
    ```bash
-   # If Overseerr is also in Docker
+   # If Seerr is also in Docker
    OVERSEERR_URL=http://overseerr:5055  # Use container name
    
    # Check Docker network
@@ -322,13 +322,13 @@ flowchart TD
     CheckFormat -->|No| FixFormat[Check documentation<br/>for correct format]
     CheckFormat -->|Yes| CheckSelenium[Check Selenium/Chrome<br/>in container logs]
     
-    RequestFail --> CheckOverseerr{Overseerr<br/>connected?}
-    CheckOverseerr -->|No| FixOverseerr[Fix Overseerr connection<br/>See Connection Problems]
-    CheckOverseerr -->|Yes| CheckMatching{Items found<br/>in Overseerr?}
+    RequestFail --> CheckOverseerr{Seerr<br/>connected?}
+    CheckOverseerr -->|No| FixOverseerr[Fix Seerr connection<br/>See Connection Problems]
+    CheckOverseerr -->|Yes| CheckMatching{Items found<br/>in Seerr?}
     CheckMatching -->|No| MatchingIssue[Title matching issue<br/>Check year/title format]
     CheckMatching -->|Yes| CheckLogs[Check logs for<br/>specific errors]
     
-    AlreadyAvail --> VerifyOverseerr[Check items in<br/>Overseerr directly]
+    AlreadyAvail --> VerifyOverseerr[Check items in<br/>Seerr directly]
     VerifyOverseerr --> TrueAvail{Actually available?}
     TrueAvail -->|Yes| Working[Working as expected!<br/>Items already in library]
     TrueAvail -->|No| ClearCache[Clear cache:<br/>docker-compose restart]
@@ -421,8 +421,8 @@ flowchart TD
 
 **Debugging**:
 
-1. **Check Overseerr search**:
-   - Manually search for failing titles in Overseerr
+1. **Check Seerr search**:
+   - Manually search for failing titles in Seerr
    - Note any differences in title format
 
 2. **Enable debug logging**:

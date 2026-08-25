@@ -78,7 +78,7 @@
                   </div>
                 </div>
 
-                <!-- View in Overseerr -->
+                <!-- View in Seerr -->
                 <Button
                   v-if="item.overseerr_url"
                   variant="ghost"
@@ -126,7 +126,7 @@
       v-else
       :icon="SendIcon"
       title="No requested items"
-      description="No items have been requested to Overseerr yet"
+      description="No items have been requested to Seerr yet"
     />
   </div>
 </template>
@@ -200,7 +200,7 @@ const debouncedSearch = useDebounceFn(() => {
   fetchItems()
 }, 500)
 
-// Open Overseerr
+// Open Seerr
 const openOverseerr = (url: string) => {
   window.open(url, '_blank')
 }

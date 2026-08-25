@@ -157,7 +157,7 @@ Write-Host "   • Health Check: http://localhost:4222/api/system/health" -Foreg
 Write-Host ""
 Write-Host "📝 Next Steps:" -ForegroundColor Yellow
 Write-Host "   1. Open http://localhost:3222 in your browser" -ForegroundColor White
-Write-Host "   2. Configure your Overseerr settings in the dashboard" -ForegroundColor White
+Write-Host "   2. Configure your Seerr settings in the dashboard" -ForegroundColor White
 Write-Host "   3. Add your media lists and start syncing!" -ForegroundColor White
 Write-Host ""
 Write-Host "🔧 Management Commands:" -ForegroundColor Yellow

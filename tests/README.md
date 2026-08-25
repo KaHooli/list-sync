@@ -1,6 +1,6 @@
 # Tests
 
-Behavioural tests for the sync path, the Overseerr client, the API server and
+Behavioural tests for the sync path, the Seerr client, the API server and
 the URL validator.
 
 ```bash
@@ -19,7 +19,7 @@ each suite in its own process so one suite's stubs cannot leak into another.
 They stub the heavy dependencies — `seleniumbase`, `cryptography`,
 `python-dotenv`, `bs4`, `halo` — rather than installing them. Nothing here
 drives a browser or reaches the network, so the whole run takes a couple of
-seconds and needs no Chrome, no API keys, and no Overseerr.
+seconds and needs no Chrome, no API keys, and no Seerr.
 
 Where a test needs something real it gets a real one: a real SQLite database
 in a temporary directory, FastAPI's `TestClient` against the actual app, a
@@ -38,7 +38,7 @@ for DNS.
 | `test_imdb_json` | schema-agnostic extraction, AWS WAF detection and backoff |
 | `test_imdb_pagination` | the watchlist runaway, scroll termination, repeated pages |
 | `test_tmdb_resolve` | exact `tt` resolution and every failure path returning `None` |
-| `test_startup` | recovery from a slow Overseerr, interactivity detection, clean exit |
+| `test_startup` | recovery from a slow Seerr, interactivity detection, clean exit |
 | `test_url_safety` | SSRF validator: schemes, private ranges, metadata, DNS evasion, allowlists |
 | `test_ssrf_endpoints` | the guards rejecting at the HTTP layer, with a sentinel asserting nothing escapes |
 | `test_image_sniff` | image type detection, cross-checked against `imghdr` where it still exists |

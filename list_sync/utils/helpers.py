@@ -175,7 +175,7 @@ def sleep_with_countdown(seconds, seerr_client, setup_logging_func):
     
     Args:
         seconds (int): Number of seconds to sleep
-        seerr_client: Overseerr API client (unused but kept for compatibility)
+        seerr_client: Seerr API client (unused but kept for compatibility)
         setup_logging_func: Logging setup function (unused but kept for compatibility)
     """
     import time

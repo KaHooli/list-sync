@@ -15,7 +15,7 @@ services:
       # Timezone - Supports: IANA names (Europe/Paris), abbreviations (CET), offsets (UTC+1, GMT-5)
       - TZ=${TZ:-UTC}
       
-      # Overseerr Configuration 
+      # Seerr Configuration 
       - SEERR_URL=${SEERR_URL:-}
       - OVERSEERR_URL=${OVERSEERR_URL:-}
       - SEERR_API_KEY=${SEERR_API_KEY:-}

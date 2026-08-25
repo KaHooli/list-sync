@@ -47,9 +47,9 @@ key = 'overseerr_user_id', value = '[user_id]'
 **Changes Made:**
 
 #### A. Improved Messaging
-- **Before:** "Sync users from Overseerr and select which user will make requests by default"
+- **Before:** "Sync users from Seerr and select which user will make requests by default"
 - **After:** 
-  - "Select which Overseerr user will request content by default for all new lists"
+  - "Select which Seerr user will request content by default for all new lists"
   - Added info box: "This will be the default user for all new lists. You can change it per-list later when adding lists."
 
 #### B. Selected User Summary
@@ -139,7 +139,7 @@ Added prominent section at the top showing the default user:
 ```
 
 #### B. Features
-- Shows user avatar (Overseerr or DiceBear fallback)
+- Shows user avatar (Seerr or DiceBear fallback)
 - Displays full name, email, and ID
 - Explains what "default user" means
 - Added `StarIcon` import for visual prominence
@@ -169,19 +169,19 @@ Added prominent section at the top showing the default user:
 Added validation in `sync_single_list()` function:
 
 ```python
-# Validate that the user exists in Overseerr
+# Validate that the user exists in Seerr
 from .database import get_overseerr_user_by_id
 user_exists = get_overseerr_user_by_id(user_id)
 
 if not user_exists:
     logging.warning(f"User ID {user_id} not found in local database")
     
-    # Try to fetch from Overseerr directly
+    # Try to fetch from Seerr directly
     try:
-        # Fetch users from Overseerr API
+        # Fetch users from Seerr API
         # Check if user_id exists
         if not user_found:
-            logging.warning(f"User not found in Overseerr. Falling back to user ID 1")
+            logging.warning(f"User not found in Seerr. Falling back to user ID 1")
             user_id = '1'
     except Exception as e:
         logging.warning(f"Failed to validate user. Proceeding with user_id {user_id}")
@@ -189,7 +189,7 @@ if not user_exists:
 
 #### B. Error Handling Flow
 1. **Check local database** for user_id
-2. **If not found** → Query Overseerr API directly
+2. **If not found** → Query Seerr API directly
 3. **If still not found** → Fall back to user ID "1" (admin)
 4. **Log all steps** for debugging and auditing
 
@@ -200,10 +200,10 @@ if not user_exists:
 - No sync interruption even if user is missing
 
 **Scenarios Handled:**
-- ✅ User deleted from Overseerr after list creation
+- ✅ User deleted from Seerr after list creation
 - ✅ User database not synced recently
 - ✅ Invalid user_id in database
-- ✅ Network issues connecting to Overseerr
+- ✅ Network issues connecting to Seerr
 
 ---
 
@@ -248,8 +248,8 @@ if not user_exists:
 └─────────────────────────────────────────────────────────┘
 
 1. SETUP WIZARD (Step 1)
-   ├── User enters Overseerr URL & API Key
-   ├── Clicks "Sync Users from Overseerr"
+   ├── User enters Seerr URL & API Key
+   ├── Clicks "Sync Users from Seerr"
    ├── Users fetched and stored in overseerr_users table
    ├── User selects default user (e.g., User 2)
    ├── Saved to config.overseerr_user_id = "2"
@@ -264,18 +264,18 @@ if not user_exists:
 
 3. SETTINGS PAGE (Users Tab)
    ├── [NEW] Displays default user at top with star icon
-   ├── Shows all Overseerr users
-   ├── "Sync Users" button to refresh from Overseerr
+   ├── Shows all Seerr users
+   ├── "Sync Users" button to refresh from Seerr
    └── Last synced timestamp
 
 4. SYNC PROCESS (Automated/Manual)
    ├── Retrieves user_id from lists.user_id
    ├── [NEW] Validates user exists in overseerr_users table
-   ├── [NEW] If missing, checks Overseerr API directly
+   ├── [NEW] If missing, checks Seerr API directly
    ├── [NEW] Falls back to user ID "1" if still not found
    ├── Creates OverseerrClient(user_id)
    ├── Makes API requests with X-Api-User: [user_id]
-   └── Content requested in Overseerr as that user
+   └── Content requested in Seerr as that user
 
 5. DATABASE STRUCTURE
    ├── config.overseerr_user_id → Global default (e.g., "2")
@@ -302,12 +302,12 @@ Add List B:
 Sync List A:
   → OverseerrClient(user_id="1")
   → Requests made with X-Api-User: 1
-  → Content appears in Overseerr as "Admin User"
+  → Content appears in Seerr as "Admin User"
 
 Sync List B:
   → OverseerrClient(user_id="2")
   → Requests made with X-Api-User: 2
-  → Content appears in Overseerr as "Test User"
+  → Content appears in Seerr as "Test User"
 ```
 
 ---
@@ -465,7 +465,7 @@ If desired, these features could be added later:
 ### API Endpoints
 - `GET /api/config` → Returns `overseerr_user_id`
 - `GET /api/overseerr/users` → Lists all users from DB
-- `POST /api/overseerr/users/sync` → Syncs users from Overseerr
+- `POST /api/overseerr/users/sync` → Syncs users from Seerr
 - `POST /api/lists` → Accepts `user_id` parameter
 
 ---

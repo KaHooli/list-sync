@@ -127,7 +127,7 @@ const formatMediaType = (type: string) => {
 const getActionText = (action: string) => {
   const actionMap: Record<string, string> = {
     synced: 'Successfully synced',
-    requested: 'Requested to Overseerr',
+    requested: 'Requested to Seerr',
     available: 'Already available',
     success: 'Successfully processed',
     error: 'Failed to process',

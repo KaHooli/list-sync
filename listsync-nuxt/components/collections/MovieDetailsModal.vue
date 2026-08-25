@@ -145,7 +145,7 @@
         </div>
       </div>
 
-      <!-- Overseerr Actions -->
+      <!-- Seerr Actions -->
       <div v-if="movie?.id" class="pt-3 border-t border-purple-500/10 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3">
         <a
           v-if="overseerrUrl"
@@ -155,7 +155,7 @@
           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white font-medium text-xs sm:text-sm transition-all shadow-lg hover:shadow-purple-500/50 touch-manipulation"
         >
           <ExternalLinkIcon :size="14" class="sm:w-4 sm:h-4" />
-          <span>View in Overseerr</span>
+          <span>View in Seerr</span>
         </a>
         <button
           v-if="movie?.id"
@@ -164,10 +164,10 @@
           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-400 to-purple-300 hover:from-purple-300 hover:to-purple-200 disabled:from-purple-500/50 disabled:to-purple-400/50 disabled:cursor-not-allowed text-white font-medium text-xs sm:text-sm transition-all shadow-lg hover:shadow-purple-400/50 touch-manipulation"
         >
           <SendIcon :size="14" class="sm:w-4 sm:h-4" :class="{ 'animate-pulse': isRequesting }" />
-          <span>{{ isRequesting ? 'Requesting...' : 'Request in Overseerr' }}</span>
+          <span>{{ isRequesting ? 'Requesting...' : 'Request in Seerr' }}</span>
         </button>
         <div v-if="!overseerrUrl && !movie?.id" class="text-xs text-muted-foreground italic">
-          Loading Overseerr URL...
+          Loading Seerr URL...
         </div>
       </div>
     </div>
@@ -213,7 +213,7 @@ const handleClose = () => {
   emit('close')
 }
 
-// Get Overseerr URL from config
+// Get Seerr URL from config
 const api = useApiService()
 const overseerrBaseUrl = ref<string | null>(null)
 
@@ -224,7 +224,7 @@ watch(isOpen, async (open) => {
       const config = await api.getConfig()
       overseerrBaseUrl.value = config.overseerr_url || null
     } catch (error) {
-      console.error('Failed to load Overseerr URL from config:', error)
+      console.error('Failed to load Seerr URL from config:', error)
     }
   }
 }, { immediate: true })
@@ -236,7 +236,7 @@ const posterUrl = computed(() => {
   return null
 })
 
-// Get Overseerr URL for the movie
+// Get Seerr URL for the movie
 const overseerrUrl = computed(() => {
   // Check if we have both the base URL and movie ID
   if (!overseerrBaseUrl.value || !props.movie?.id) {
@@ -246,7 +246,7 @@ const overseerrUrl = computed(() => {
   // Ensure base URL doesn't have trailing slash
   const cleanBaseUrl = overseerrBaseUrl.value.replace(/\/$/, '')
   
-  // Use TMDB ID to construct Overseerr URL
+  // Use TMDB ID to construct Seerr URL
   return `${cleanBaseUrl}/movie/${props.movie.id}`
 })
 
@@ -293,9 +293,9 @@ const handleRequestMedia = async () => {
     
     if (response.success) {
       if (response.status === 'already_requested' || response.status === 'already_available') {
-        showSuccess(response.message || 'Media is already in Overseerr')
+        showSuccess(response.message || 'Media is already in Seerr')
       } else {
-        showSuccess(response.message || 'Media successfully requested in Overseerr')
+        showSuccess(response.message || 'Media successfully requested in Seerr')
       }
     } else {
       showError(response.message || 'Failed to request media')

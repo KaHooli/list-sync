@@ -200,7 +200,7 @@ export const useListsStore = defineStore('lists', {
     },
 
     /**
-     * Change which Overseerr user a list requests as
+     * Change which Seerr user a list requests as
      */
     async updateListUser(listType: string, listId: string, userId: string) {
       this.error = null

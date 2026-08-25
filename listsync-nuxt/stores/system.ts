@@ -1,5 +1,5 @@
 /**
- * System Store - Manages system health and Overseerr status
+ * System Store - Manages system health and Seerr status
  */
 
 import { defineStore } from 'pinia'
@@ -24,7 +24,7 @@ export const useSystemStore = defineStore('system', {
     },
 
     /**
-     * Check if Overseerr is connected
+     * Check if Seerr is connected
      */
     isOverseerrConnected: (state) => {
       return state.overseerrStatus?.isConnected || false
@@ -117,7 +117,7 @@ export const useSystemStore = defineStore('system', {
     },
 
     /**
-     * Fetch Overseerr status
+     * Fetch Seerr status
      */
     async checkOverseerr(force = false) {
       // Skip if not stale and not forced
@@ -131,8 +131,8 @@ export const useSystemStore = defineStore('system', {
         
         this.overseerrStatus = status
       } catch (err: any) {
-        console.error('Error fetching Overseerr status:', err)
-        // Don't set error for Overseerr - it's optional
+        console.error('Error fetching Seerr status:', err)
+        // Don't set error for Seerr - it's optional
       }
     },
 

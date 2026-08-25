@@ -21,14 +21,14 @@ This comprehensive configuration guide covers all settings, options, and advance
 ```mermaid
 flowchart LR
     Start[Start Configuration] --> Basic[Basic Settings]
-    Basic --> Overseerr[Overseerr Connection]
-    Overseerr --> List[Add First List]
+    Basic --> Seerr[Seerr Connection]
+    Seerr --> List[Add First List]
     List --> Test[Test Configuration]
     Test --> Success[✅ Ready!]
     
     style Start fill:#4CAF50
     style Success fill:#4CAF50
-    style Overseerr fill:#2196F3
+    style Seerr fill:#2196F3
 ```
 
 **Essential Configuration:**
@@ -45,20 +45,20 @@ IMDB_LISTS=top
 ```
 
 **Getting Your API Key:**
-1. Log into your Overseerr instance
+1. Log into your Seerr instance
 2. Go to Settings → General → API Key
 3. Copy the API key and add it to your `.env` file
 
 ## ⚙️ Core Configuration
 
-### Overseerr Connection (Required)
+### Seerr Connection (Required)
 
 | Variable | Description | Required | Default | Example |
 |----------|-------------|----------|---------|---------|
-| `OVERSEERR_URL` | Your Overseerr server URL | ✅ | - | `https://overseerr.example.com` |
-| `OVERSEERR_API_KEY` | API key from Overseerr settings | ✅ | - | `abc123...` |
+| `OVERSEERR_URL` | Your Seerr server URL | ✅ | - | `https://overseerr.example.com` |
+| `OVERSEERR_API_KEY` | API key from Seerr settings | ✅ | - | `abc123...` |
 | `OVERSEERR_USER_ID` | User ID for making requests | ❌ | `1` | `1` |
-| `OVERSEERR_4K` | Send requests as 4K to Overseerr | ❌ | `false` | `true` |
+| `OVERSEERR_4K` | Send requests as 4K to Seerr | ❌ | `false` | `true` |
 
 **URL Format Examples:**
 ```bash
@@ -815,8 +815,8 @@ Error: Invalid IMDb list format: invalid_list_id
 Error: OVERSEERR_URL must include protocol (http:// or https://)
 
 # Connection errors
-Error: Cannot connect to Overseerr at http://invalid-url
-Error: Invalid API key for Overseerr
+Error: Cannot connect to Seerr at http://invalid-url
+Error: Invalid API key for Seerr
 Error: List not accessible: https://imdb.com/list/invalid
 ```
 
@@ -843,7 +843,7 @@ python -m list_sync --validate-config
 # Test specific provider
 python -m list_sync --test-provider imdb --list-id top
 
-# Test Overseerr connection
+# Test Seerr connection
 python -m list_sync --test-overseerr
 ```
 
@@ -894,7 +894,7 @@ TZ=UTC
 - Test list URLs in browser
 
 #### Network Issues
-- Verify Overseerr URL is accessible from ListSync container
+- Verify Seerr URL is accessible from ListSync container
 - Check firewall settings for Docker networking
 - Ensure CORS settings include your domain
 - Test network connectivity

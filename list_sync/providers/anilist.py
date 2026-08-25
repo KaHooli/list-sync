@@ -9,7 +9,7 @@ Supports:
 URL Format: https://anilist.co/user/{username}/animelist/{status}
             https://anilist.co/user/{username}/animelist
 
-The provider resolves anime titles to TMDB IDs via Trakt API for Overseerr compatibility.
+The provider resolves anime titles to TMDB IDs via Trakt API for Seerr compatibility.
 """
 
 import logging
@@ -230,14 +230,14 @@ def extract_media_from_anilist_entry(entry: Dict[str, Any]) -> Optional[Dict[str
         # Get year
         year = media.get("startDate", {}).get("year")
         
-        # AniList IDs (for reference, not used for Overseerr)
+        # AniList IDs (for reference, not used for Seerr)
         anilist_id = media.get("id")
         mal_id = media.get("idMal")
         
         return {
             "title": title,
             "year": year,
-            "media_type": "tv",  # AniList anime is always TV type for Overseerr
+            "media_type": "tv",  # AniList anime is always TV type for Seerr
             "anilist_id": anilist_id,
             "mal_id": mal_id,
             "title_english": title_english,

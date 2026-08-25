@@ -36,11 +36,11 @@ This comprehensive installation guide covers all deployment methods for ListSync
 - **Chrome/Chromium**: For Selenium web scraping
 - **Git**: For cloning the repository
 
-### Overseerr Requirements
-- **Overseerr Instance**: Running and accessible
-- **API Key**: Obtained from Overseerr settings
+### Seerr Requirements
+- **Seerr Instance**: Running and accessible
+- **API Key**: Obtained from Seerr settings
 - **User ID**: For making requests (usually 1)
-- **Network Access**: ListSync must be able to reach Overseerr
+- **Network Access**: ListSync must be able to reach Seerr
 
 ### Network Requirements
 - **Port 3222**: Web dashboard (configurable)
@@ -345,7 +345,7 @@ cp envsample.txt .env
 
 # Edit configuration
 nano .env
-# Add your Overseerr URL, API key, and list configurations
+# Add your Seerr URL, API key, and list configurations
 ```
 
 ### Frontend Installation
@@ -443,7 +443,7 @@ pm2 startup
 
 ### Multi-Instance Deployments
 
-#### Multiple Overseerr Instances
+#### Multiple Seerr Instances
 ```yaml
 # docker-compose-multi.yml
 version: "3.8"
@@ -600,7 +600,7 @@ server {
 
 ```mermaid
 flowchart TD
-    Start[Installation Complete] --> TestConnection[Test Overseerr Connection]
+    Start[Installation Complete] --> TestConnection[Test Seerr Connection]
     TestConnection --> ConnOK{Connection OK?}
     ConnOK -->|No| FixConnection[Fix Connection Issues<br/>- Check URL format<br/>- Verify API key<br/>- Test network access]
     ConnOK -->|Yes| AddFirstList[Add First List]
@@ -618,7 +618,7 @@ flowchart TD
     
     ConfigureSync --> TestSync[Test First Sync<br/>- Trigger manual sync<br/>- Monitor progress<br/>- Check results]
     TestSync --> SyncOK{Sync Successful?}
-    SyncOK -->|No| DebugSync[Debug Sync Issues<br/>- Check logs<br/>- Verify list access<br/>- Test Overseerr]
+    SyncOK -->|No| DebugSync[Debug Sync Issues<br/>- Check logs<br/>- Verify list access<br/>- Test Seerr]
     SyncOK -->|Yes| SetupComplete[✅ Setup Complete!<br/>Ready for production]
     
     DebugSync --> FixIssues[Fix Issues<br/>- Update configuration<br/>- Fix list access<br/>- Resolve errors]
@@ -633,12 +633,12 @@ flowchart TD
 
 ### Configuration Steps
 
-#### 1. Test Overseerr Connection
+#### 1. Test Seerr Connection
 ```bash
 # Test API connectivity
 curl -H "X-Api-Key: your-api-key" http://your-overseerr-url/api/v1/status
 
-# Expected response: JSON with Overseerr status
+# Expected response: JSON with Seerr status
 ```
 
 #### 2. Add Your First List
@@ -735,7 +735,7 @@ flowchart TD
     TestDashboard --> OpenBrowser[Open localhost:3222<br/>in browser]
     OpenBrowser --> DashWorks{Dashboard loads?}
     DashWorks -->|No| CheckFrontend[Check port 3222<br/>Check frontend logs]
-    DashWorks -->|Yes| TestOverseerr[Test Overseerr Connection]
+    DashWorks -->|Yes| TestOverseerr[Test Seerr Connection]
     
     TestOverseerr --> ConfigOverseerr[Check .env:<br/>OVERSEERR_URL<br/>OVERSEERR_API_KEY]
     ConfigOverseerr --> ConnTest{Connection OK<br/>in dashboard?}
@@ -1045,7 +1045,7 @@ npm install
 
 ### Network Issues
 
-**Cannot Connect to Overseerr:**
+**Cannot Connect to Seerr:**
 ```bash
 # Test connectivity
 curl -v http://your-overseerr-url/api/v1/status

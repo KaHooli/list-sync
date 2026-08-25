@@ -7,7 +7,7 @@ This document provides a comprehensive test plan to verify the user configuratio
 
 ### Prerequisites
 1. ListSync instance running (Frontend + Backend + Core)
-2. Overseerr/Jellyseerr instance with at least 2 users configured
+2. Seerr instance with at least 2 users configured
 3. Access to database to verify data persistence
 
 ### Test Data
@@ -27,9 +27,9 @@ This document provides a comprehensive test plan to verify the user configuratio
 1. Start fresh ListSync instance (or clear database)
 2. Navigate to setup wizard at `http://localhost:3222/setup`
 3. **Step 1 - Essential Configuration:**
-   - Enter Overseerr URL
-   - Enter Overseerr API Key
-   - Click "Sync Users from Overseerr" button
+   - Enter Seerr URL
+   - Enter Seerr API Key
+   - Click "Sync Users from Seerr" button
 4. Verify users are displayed in grid format
 5. Select User 2 (Test User)
 6. Verify "Selected User Summary" shows:
@@ -38,7 +38,7 @@ This document provides a comprehensive test plan to verify the user configuratio
    - User ID
 
 **Expected Results:**
-- ✅ Users load successfully from Overseerr
+- ✅ Users load successfully from Seerr
 - ✅ User cards display with avatars, names, emails, IDs
 - ✅ Selected user is highlighted with purple border
 - ✅ Summary box shows selected user information
@@ -92,12 +92,12 @@ SELECT id, display_name, email FROM overseerr_users;
 **Expected Results:**
 - ✅ User dropdown is pre-populated with User 2 (default from wizard)
 - ✅ Shows green confirmation box: "This list will request content as: Test User"
-- ✅ All Overseerr users are available in dropdown
+- ✅ All Seerr users are available in dropdown
 - ✅ Can change user selection
 
 **Verification:**
 - Default user should match the one configured in wizard
-- Dropdown should show all users from Overseerr
+- Dropdown should show all users from Seerr
 
 ---
 
@@ -180,10 +180,10 @@ FROM lists;
 Check backend logs for entries like:
 ```
 INFO: Using user_id 2 from list configuration
-INFO: Creating Overseerr client with user_id: 2
+INFO: Creating Seerr client with user_id: 2
 ```
 
-Check Overseerr request history:
+Check Seerr request history:
 - Requests should appear as made by "Test User", not "Admin User"
 
 ---
@@ -194,13 +194,13 @@ Check Overseerr request history:
 
 **Steps:**
 1. Add a list with User 2
-2. Delete User 2 from Overseerr (or change ID in database to non-existent user)
+2. Delete User 2 from Seerr (or change ID in database to non-existent user)
 3. Trigger sync for that list
 4. Monitor logs
 
 **Expected Results:**
 - ✅ Log shows warning: "User ID X not found in local user database"
-- ✅ System attempts to validate against Overseerr API
+- ✅ System attempts to validate against Seerr API
 - ✅ If user not found, falls back to User ID 1
 - ✅ Sync continues without crashing
 
@@ -208,17 +208,17 @@ Check Overseerr request history:
 Check logs for:
 ```
 WARNING: User ID 2 not found in local user database
-WARNING: User ID 2 not found in Overseerr. Falling back to default user ID 1
+WARNING: User ID 2 not found in Seerr. Falling back to default user ID 1
 ```
 
 ---
 
 ### ✅ Test 8: Settings Page - User Sync
 
-**Objective:** Verify users can be synced from Overseerr via Settings.
+**Objective:** Verify users can be synced from Seerr via Settings.
 
 **Steps:**
-1. Add a new user in Overseerr (User 3)
+1. Add a new user in Seerr (User 3)
 2. Go to Settings → Users
 3. Click "Sync Users" button
 4. Observe user list updates
@@ -273,7 +273,7 @@ SELECT id, display_name, last_synced FROM overseerr_users ORDER BY id;
 - ✅ User IDs shown as secondary info (badges)
 - ✅ Email addresses shown if available
 - ✅ Admin badge for User ID 1
-- ✅ Avatars displayed (Overseerr or DiceBear fallback)
+- ✅ Avatars displayed (Seerr or DiceBear fallback)
 
 **Visual Check:**
 - Should see "Admin User" not just "1"
@@ -386,7 +386,7 @@ The user configuration system is working correctly if:
 ✅ **Settings Page:**
 - Displays default user prominently
 - Shows all synced users
-- Can re-sync users from Overseerr
+- Can re-sync users from Seerr
 
 ✅ **Database:**
 - `lists.user_id` correctly stores assigned user

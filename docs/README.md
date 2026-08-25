@@ -1,6 +1,6 @@
 # ListSync Documentation
 
-Welcome to the comprehensive documentation for ListSync - an automated media list synchronization tool that seamlessly syncs watchlists from various online platforms to your Overseerr or Jellyseerr instance.
+Welcome to the comprehensive documentation for ListSync - an automated media list synchronization tool that seamlessly syncs watchlists from various online platforms to your Seerr or Jellyseerr instance.
 
 ## Quick Navigation
 
@@ -159,7 +159,7 @@ docker-compose exec listsync-full cp -r /usr/src/app/data /backup/
 ## Troubleshooting Quick Links
 
 ### Common Issues
-- **[Connection Issues](troubleshooting.md#connection-problems)** - Overseerr/Jellyseerr connectivity
+- **[Connection Issues](troubleshooting.md#connection-problems)** - Seerr connectivity
 - **[Sync Failures](troubleshooting.md#sync-issues)** - List synchronization problems
 - **[Performance Issues](troubleshooting.md#performance-problems)** - Slow sync operations
 - **[Web Dashboard Issues](troubleshooting.md#web-interface-issues)** - Dashboard not loading

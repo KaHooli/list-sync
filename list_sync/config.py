@@ -112,7 +112,7 @@ def save_config(seerr_url, api_key, requester_user_id):
     Save configuration to encrypted file.
     
     Args:
-        seerr_url (str): Overseerr URL
+        seerr_url (str): Seerr URL
         api_key (str): API key
         requester_user_id (str): Requester user ID
     """
@@ -129,7 +129,7 @@ def load_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
     Load configuration from encrypted file.
     
     Returns:
-        Tuple[Optional[str], Optional[str], Optional[str]]: Overseerr URL, API key, and requester user ID
+        Tuple[Optional[str], Optional[str], Optional[str]]: Seerr URL, API key, and requester user ID
     """
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "rb") as f:
@@ -158,7 +158,7 @@ def load_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
     return None, None, None
 
 def test_overseerr_api(seerr_url, api_key):
-    """Test Overseerr API connection."""
+    """Test Seerr API connection."""
     headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
     test_url = f"{seerr_url}/api/v1/status"
     spinner = Halo(text=color_gradient("🔍  Testing API connection...", "#ffaa00", "#ff5500"), spinner="dots")
@@ -168,11 +168,11 @@ def test_overseerr_api(seerr_url, api_key):
         response.raise_for_status()
         spinner.succeed(color_gradient("🎉  API connection successful!", "#00ff00", "#00aa00"))
         import logging
-        logging.info("Overseerr API connection successful!")
+        logging.info("Seerr API connection successful!")
     except Exception as e:
-        spinner.fail(color_gradient(f"❌  Overseerr API connection failed. Error: {str(e)}", "#ff0000", "#aa0000"))
+        spinner.fail(color_gradient(f"❌  Seerr API connection failed. Error: {str(e)}", "#ff0000", "#aa0000"))
         import logging
-        logging.error(f"Overseerr API connection failed. Error: {str(e)}")
+        logging.error(f"Seerr API connection failed. Error: {str(e)}")
         raise
 
 def set_requester_user(seerr_url, api_key):
@@ -198,7 +198,7 @@ def set_requester_user(seerr_url, api_key):
         return requester_user_id
     except Exception as e:
         import logging
-        logging.error(f"Overseerr API connection failed. Error: {str(e)}")
+        logging.error(f"Seerr API connection failed. Error: {str(e)}")
         return 1
 
 def get_trakt_client_id() -> Optional[str]:
@@ -272,7 +272,7 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
     Load configuration from database or environment variables (database preferred).
     
     Returns:
-        Tuple: Overseerr URL, API key, user ID, sync interval (float), automated mode flag, 4K flag
+        Tuple: Seerr URL, API key, user ID, sync interval (float), automated mode flag, 4K flag
     """
     import logging
     
@@ -317,8 +317,8 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
                 logging.info("Configuration loaded from database")
                 return url, api_key, user_id, sync_interval, automated_mode, is_4k
             except Exception as e:
-                logging.error(f"Error testing Overseerr API with database config: {e}")
-                print(color_gradient(f"\n❌  Error testing Overseerr API: {e}", "#ff0000", "#aa0000"))
+                logging.error(f"Error testing Seerr API with database config: {e}")
+                print(color_gradient(f"\n❌  Error testing Seerr API: {e}", "#ff0000", "#aa0000"))
         
         return None, None, None, 0.0, False, False
         
@@ -350,12 +350,12 @@ def load_env_config() -> Tuple[Optional[str], Optional[str], Optional[str], floa
                 logging.info("Configuration loaded from environment variables")
                 return url, api_key, user_id, float(sync_interval), automated_mode, is_4k
             except Exception as e:
-                logging.error(f"Error testing Overseerr API with environment variables: {e}")
-                print(color_gradient(f"\n❌  Error testing Overseerr API: {e}", "#ff0000", "#aa0000"))
+                logging.error(f"Error testing Seerr API with environment variables: {e}")
+                print(color_gradient(f"\n❌  Error testing Seerr API: {e}", "#ff0000", "#aa0000"))
         
         return None, None, None, 0.0, False, False
 
-# Separator between a list ID and the Overseerr user it should request as, in
+# Separator between a list ID and the Seerr user it should request as, in
 # the *_LISTS environment variables. Two colons, because a single colon already
 # means something in Trakt special lists ("trending:movies") and appears in URLs.
 LIST_USER_SEPARATOR = "::"
@@ -366,7 +366,7 @@ def parse_list_entry(raw_entry: str) -> Tuple[str, Optional[str]]:
     Split one entry of a *_LISTS environment variable into list ID and user.
 
     Entries are either a bare list ID ("ls123456789") or a list ID with the
-    Overseerr user that should request its items ("ls123456789::7").
+    Seerr user that should request its items ("ls123456789::7").
 
     Args:
         raw_entry (str): One comma-separated entry from a *_LISTS variable
@@ -754,7 +754,7 @@ class ConfigManager:
         logging.info("Starting environment to database migration")
         
         settings_to_migrate = {
-            # Overseerr
+            # Seerr
             'overseerr_url': get_seerr_env('SEERR_URL', ''),
             'overseerr_api_key': get_seerr_env('SEERR_API_KEY', ''),
             'overseerr_user_id': get_seerr_env('SEERR_USER_ID', '1'),

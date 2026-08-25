@@ -57,7 +57,7 @@ def handle_menu_choice(
     
     Args:
         choice (str): User's choice
-        seerr_client: Overseerr API client
+        seerr_client: Seerr API client
         run_sync_func (Callable): Function to run sync
         load_list_ids_func (Callable): Function to load list IDs
         display_lists_func (Callable): Function to display lists
@@ -220,7 +220,7 @@ def one_time_list_sync(seerr_client, run_sync_func):
     Perform a one-time list sync with provided list IDs.
     
     Args:
-        seerr_client: Overseerr API client
+        seerr_client: Seerr API client
         run_sync_func: Function to run sync
     """
     print(color_gradient("\n📋  Supported Providers:", "#00aaff", "#00ffaa"))

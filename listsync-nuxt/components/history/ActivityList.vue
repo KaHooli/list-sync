@@ -263,8 +263,8 @@ const fetchActivities = async () => {
           title = 'Web Scraping'
         }
       } else if (category === 'api_calls') {
-        if (entry.message.includes('Overseerr')) {
-          title = 'Overseerr API'
+        if (entry.message.includes('Seerr')) {
+          title = 'Seerr API'
         } else if (entry.message.includes('TMDb') || entry.message.includes('Detailed response')) {
           title = 'TMDb API'
         } else {

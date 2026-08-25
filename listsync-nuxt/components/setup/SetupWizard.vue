@@ -158,7 +158,7 @@ const screenReaderAnnouncement = ref('')
 watch(currentStep, (newStep, oldStep) => {
   if (newStep !== oldStep) {
     if (newStep === 0) {
-      screenReaderAnnouncement.value = 'Step 1 of 2: Connect to Overseerr'
+      screenReaderAnnouncement.value = 'Step 1 of 2: Connect to Seerr'
     } else if (newStep === 1) {
       screenReaderAnnouncement.value = 'Step 2 of 2: Configure your settings'
     } else if (newStep === 2) {
@@ -223,7 +223,7 @@ const handleStep1Next = async () => {
     const config = await api.getConfig()
     
     if (!config.overseerr_url || !config.overseerr_api_key) {
-      throw new Error('Credentials not found. Please click "Sync Users from Overseerr" first.')
+      throw new Error('Credentials not found. Please click "Sync Users from Seerr" first.')
     }
     
     console.log('Step 1 credentials verified in database:', {
@@ -244,9 +244,9 @@ const handleStep1Next = async () => {
   } catch (error: any) {
     console.error('Step 1 validation error:', error)
     validationErrors.value = {
-      overseerr_url: error.message || 'Please test your Overseerr connection first'
+      overseerr_url: error.message || 'Please test your Seerr connection first'
     }
-    showError('Validation Failed', error.message || 'Please click "Sync Users from Overseerr" to test your connection first.')
+    showError('Validation Failed', error.message || 'Please click "Sync Users from Seerr" to test your connection first.')
   } finally {
     isValidating.value = false
   }

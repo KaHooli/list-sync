@@ -9,10 +9,10 @@
           </div>
           <div>
             <h3 class="text-base font-bold titillium-web-semibold">
-              Overseerr Configuration
+              Seerr Configuration
             </h3>
             <p class="text-[10px] text-muted-foreground font-medium">
-              Configure your Overseerr instance connection
+              Configure your Seerr instance connection
             </p>
           </div>
         </div>
@@ -33,7 +33,7 @@
         <!-- URL -->
         <div class="md:col-span-2">
           <label class="block text-xs font-semibold mb-2 text-foreground">
-            Overseerr URL
+            Seerr URL
             <span class="text-danger ml-1">*</span>
           </label>
           <Input
@@ -44,7 +44,7 @@
             @update:model-value="emitUpdate"
           />
           <p class="text-xs text-muted-foreground mt-1.5">
-            The full URL to your Overseerr instance
+            The full URL to your Seerr instance
           </p>
         </div>
 
@@ -57,12 +57,12 @@
           <Input
             v-model="localValue.apiKey"
             type="password"
-            placeholder="Enter your Overseerr API key"
+            placeholder="Enter your Seerr API key"
             :icon="KeyIcon"
             @update:model-value="emitUpdate"
           />
           <p class="text-xs text-muted-foreground mt-1.5">
-            Found in Overseerr Settings → General → API Key
+            Found in Seerr Settings → General → API Key
           </p>
         </div>
 
@@ -110,7 +110,7 @@
             </span>
           </div>
           <p class="text-xs text-muted-foreground mt-1.5">
-            Send requests as 4K to Overseerr
+            Send requests as 4K to Seerr
           </p>
         </div>
       </div>

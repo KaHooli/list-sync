@@ -643,10 +643,10 @@ onMounted(async () => {
       await syncStore.fetchLiveSyncStatus()
       console.log('[Lists] onMounted: Sync status fetched successfully')
 
-      // Each card shows and edits the Overseerr user its list requests as, so
+      // Each card shows and edits the Seerr user its list requests as, so
       // the user list has to be loaded here rather than only in the add modal.
       usersStore.fetchUsers().catch((err) => {
-        console.error('[Lists] onMounted: Failed to fetch Overseerr users:', err)
+        console.error('[Lists] onMounted: Failed to fetch Seerr users:', err)
       })
       
       // Wait for component to be fully rendered

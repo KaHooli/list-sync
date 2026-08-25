@@ -1,5 +1,5 @@
 """
-Overseerr API client for the ListSync application.
+Seerr API client for the ListSync application.
 """
 
 import json
@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from ..utils.helpers import calculate_title_similarity, custom_input, color_gradient
 
-# Overseerr/Jellyseerr permission bits (server/lib/permissions.ts).
+# Seerr permission bits (server/lib/permissions.ts).
 # ADMIN implies every other permission.
 PERMISSION_ADMIN = 2
 PERMISSION_REQUEST = 32
@@ -19,14 +19,14 @@ PERMISSION_REQUEST_TV = 524288
 
 
 class SeerrClient:
-    """Client for interacting with the Overseerr API."""
+    """Client for interacting with the Seerr API."""
     
     def __init__(self, seerr_url: str, api_key: str, requester_user_id: str = "1"):
         """
-        Initialize the Overseerr API client.
+        Initialize the Seerr API client.
         
         Args:
-            seerr_url (str): Overseerr server URL
+            seerr_url (str): Seerr server URL
             api_key (str): API key
             requester_user_id (str, optional): Requester user ID. Defaults to "1".
         """
@@ -39,7 +39,7 @@ class SeerrClient:
 
     def _headers_for_user(self, requester_user_id: Optional[str] = None) -> Dict[str, str]:
         """
-        Build request headers for a specific Overseerr user without mutating defaults.
+        Build request headers for a specific Seerr user without mutating defaults.
         """
         user_id = requester_user_id or self.requester_user_id or "1"
         return {
@@ -51,9 +51,9 @@ class SeerrClient:
     def _submit_request(self, payload: Dict[str, Any], description: str,
                         requester_user_id: Optional[str] = None) -> str:
         """
-        POST a request to Overseerr as a specific user and classify the outcome.
+        POST a request to Seerr as a specific user and classify the outcome.
 
-        Overseerr answers with distinct signals that all look like "it didn't
+        Seerr answers with distinct signals that all look like "it didn't
         work" unless they're read carefully:
           401 - the X-Api-User ID doesn't exist on the server
           403 - the user exists but may not request, or has hit their quota
@@ -62,7 +62,7 @@ class SeerrClient:
         Args:
             payload (Dict[str, Any]): Request body to POST
             description (str): Human-readable description used in log lines
-            requester_user_id (Optional[str]): Overseerr user to request as
+            requester_user_id (Optional[str]): Seerr user to request as
 
         Returns:
             str: "success", "already_requested", or "error"
@@ -85,16 +85,16 @@ class SeerrClient:
             status_code = e.response.status_code
             server_message = self._extract_error_message(e.response)
 
-            # 409 is Overseerr's canonical "already requested" answer.
+            # 409 is Seerr's canonical "already requested" answer.
             if status_code == 409:
                 logging.info(f"📌 {description}: already requested by user {user_id} ({server_message})")
                 return "already_requested"
 
             if status_code == 401:
                 logging.error(
-                    f"❌ {description}: Overseerr rejected user_id {user_id} (401). "
+                    f"❌ {description}: Seerr rejected user_id {user_id} (401). "
                     f"No user with that ID exists on {self.seerr_url}. "
-                    f"Check the user assigned to this list against Settings → Users in Overseerr."
+                    f"Check the user assigned to this list against Settings → Users in Seerr."
                 )
                 return "error"
 
@@ -103,12 +103,12 @@ class SeerrClient:
                 if "quota" in lowered:
                     logging.error(
                         f"❌ {description}: user {user_id} has hit their request quota ({server_message}). "
-                        f"Raise or clear the quota in Overseerr under Users → {user_id} → Permissions."
+                        f"Raise or clear the quota in Seerr under Users → {user_id} → Permissions."
                     )
                 else:
                     logging.error(
                         f"❌ {description}: user {user_id} is not allowed to make this request ({server_message}). "
-                        f"Grant that user the Request permission in Overseerr under Users → {user_id} → Permissions "
+                        f"Grant that user the Request permission in Seerr under Users → {user_id} → Permissions "
                         f"(4K requests need the separate 4K permission)."
                     )
                 return "error"
@@ -126,12 +126,12 @@ class SeerrClient:
             return "error"
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"❌ {description}: could not reach Overseerr - {str(e)}")
+            logging.error(f"❌ {description}: could not reach Seerr - {str(e)}")
             return "error"
 
     @staticmethod
     def _extract_error_message(response) -> str:
-        """Pull Overseerr's error message out of a failed response body."""
+        """Pull Seerr's error message out of a failed response body."""
         try:
             data = response.json()
             if isinstance(data, dict):
@@ -145,7 +145,7 @@ class SeerrClient:
 
     def get_users(self, use_cache: bool = True) -> Optional[list]:
         """
-        Fetch the users configured on the Overseerr server.
+        Fetch the users configured on the Seerr server.
 
         Args:
             use_cache (bool): Reuse the list fetched earlier in this run. A sync
@@ -171,7 +171,7 @@ class SeerrClient:
             self._users_cache = response.json().get("results", [])
             return self._users_cache
         except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to fetch Overseerr users: {str(e)}")
+            logging.error(f"Failed to fetch Seerr users: {str(e)}")
             return None
 
     def validate_requester(self, requester_user_id: str) -> Tuple[bool, str]:
@@ -182,7 +182,7 @@ class SeerrClient:
         one clear message naming the user and what's wrong with it.
 
         Args:
-            requester_user_id (str): Overseerr user ID to validate
+            requester_user_id (str): Seerr user ID to validate
 
         Returns:
             Tuple[bool, str]: (usable, human-readable explanation)
@@ -198,7 +198,7 @@ class SeerrClient:
         if not match:
             known = ", ".join(f"{u.get('id')}={u.get('displayName')}" for u in users[:20]) or "none"
             return False, (
-                f"Overseerr has no user with ID {user_id}. "
+                f"Seerr has no user with ID {user_id}. "
                 f"Known users: {known}"
             )
 
@@ -213,7 +213,7 @@ class SeerrClient:
             )
             if not is_admin and not can_request:
                 return False, (
-                    f"'{display_name}' (ID {user_id}) does not have the Request permission in Overseerr. "
+                    f"'{display_name}' (ID {user_id}) does not have the Request permission in Seerr. "
                     f"Grant it under Users → {display_name} → Permissions."
                 )
 
@@ -222,7 +222,7 @@ class SeerrClient:
 
     def test_connection(self):
         """
-        Test the connection to the Overseerr API.
+        Test the connection to the Seerr API.
         
         Raises:
             Exception: If the connection test fails
@@ -231,10 +231,10 @@ class SeerrClient:
         try:
             response = requests.get(test_url, headers=self.headers)
             response.raise_for_status()
-            logging.info("Overseerr API connection successful!")
+            logging.info("Seerr API connection successful!")
             return True
         except Exception as e:
-            logging.error(f"Overseerr API connection failed. Error: {str(e)}")
+            logging.error(f"Seerr API connection failed. Error: {str(e)}")
             raise
     
     def set_requester_user(self) -> str:
@@ -280,18 +280,18 @@ class SeerrClient:
         media_url = f"{self.seerr_url}/api/v1/{media_type}/{tmdb_id}"
         
         try:
-            logging.info(f"🎯 Overseerr API: Direct lookup by TMDB ID: {tmdb_id} [{media_type}]")
+            logging.info(f"🎯 Seerr API: Direct lookup by TMDB ID: {tmdb_id} [{media_type}]")
             logging.debug(f"Request URL: {media_url}")
             
             response = requests.get(media_url, headers=self.headers, timeout=10)
             
             if response.status_code == 404:
-                logging.info(f"❌ Overseerr API: TMDB ID {tmdb_id} not found in Overseerr")
+                logging.info(f"❌ Seerr API: TMDB ID {tmdb_id} not found in Seerr")
                 return None
             
             if response.status_code == 403:
-                logging.error(f"❌ Overseerr API: 403 Forbidden - API key does not have permission to access /api/v1/{media_type}/{tmdb_id}")
-                logging.error(f"   Please check your API key permissions in Overseerr settings. The key needs 'Read' permission for media endpoints.")
+                logging.error(f"❌ Seerr API: 403 Forbidden - API key does not have permission to access /api/v1/{media_type}/{tmdb_id}")
+                logging.error(f"   Please check your API key permissions in Seerr settings. The key needs 'Read' permission for media endpoints.")
                 return None
             
             response.raise_for_status()
@@ -308,7 +308,7 @@ class SeerrClient:
             except (ValueError, TypeError):
                 pass
             
-            logging.info(f"✅ Overseerr API: Found '{media_title}' ({media_year}) via TMDB ID {tmdb_id}")
+            logging.info(f"✅ Seerr API: Found '{media_title}' ({media_year}) via TMDB ID {tmdb_id}")
             # Removed verbose media data logging to reduce log size
             
             # Ensure tmdb_id is an integer (may be string from collections)
@@ -322,12 +322,12 @@ class SeerrClient:
             }
             
         except requests.exceptions.RequestException as e:
-            logging.error(f"❌ Overseerr API error for TMDB ID {tmdb_id}: {str(e)}")
+            logging.error(f"❌ Seerr API error for TMDB ID {tmdb_id}: {str(e)}")
             return None
     
     def search_media(self, media_title: str, media_type: str, release_year: int = None) -> Optional[Dict[str, Any]]:
         """
-        Search for media in Overseerr (fallback method when no TMDB ID available).
+        Search for media in Seerr (fallback method when no TMDB ID available).
         
         Args:
             media_title (str): Title to search for
@@ -337,7 +337,7 @@ class SeerrClient:
         Returns:
             Optional[Dict[str, Any]]: Search result or None if not found
         """
-        logging.info(f"🔍 Overseerr API: Fallback search by title: '{media_title}' ({release_year}) [{media_type}]")
+        logging.info(f"🔍 Seerr API: Fallback search by title: '{media_title}' ({release_year}) [{media_type}]")
         search_url = f"{self.seerr_url}/api/v1/search"
         search_title = media_title  # Use the provided title
         
@@ -352,7 +352,7 @@ class SeerrClient:
                 encoded_query = quote(search_title, safe='')
                 url = f"{search_url}?query={encoded_query}&page={page}&language=en"
                 
-                logging.info(f"  📄 Overseerr API: Searching page {page} for '{search_title}' (Year: {release_year})")
+                logging.info(f"  📄 Seerr API: Searching page {page} for '{search_title}' (Year: {release_year})")
                 logging.debug(f"  Request URL: {url}")
                 response = requests.get(url, headers=self.headers, timeout=10)
                 
@@ -363,8 +363,8 @@ class SeerrClient:
                     continue
                 
                 if response.status_code == 403:
-                    logging.error(f"❌ Overseerr API: 403 Forbidden - API key does not have permission to access /api/v1/search")
-                    logging.error(f"   Please check your API key permissions in Overseerr settings. The key needs 'Read' permission for search endpoints.")
+                    logging.error(f"❌ Seerr API: 403 Forbidden - API key does not have permission to access /api/v1/search")
+                    logging.error(f"   Please check your API key permissions in Seerr settings. The key needs 'Read' permission for search endpoints.")
                     return None
                     
                 response.raise_for_status()
@@ -444,18 +444,18 @@ class SeerrClient:
             except (ValueError, TypeError):
                 pass
             
-            logging.info(f"✅ Overseerr API: Final match for '{media_title}' ({release_year}): '{result_title}' ({result_year}) - Score: {best_score}")
+            logging.info(f"✅ Seerr API: Final match for '{media_title}' ({release_year}): '{result_title}' ({result_year}) - Score: {best_score}")
             return {
                 "id": best_match["id"],
                 "mediaType": best_match["mediaType"],
             }
         
-        logging.warning(f'❌ Overseerr API: No matching results found for "{media_title}" ({release_year}) of type "{media_type}"')
+        logging.warning(f'❌ Seerr API: No matching results found for "{media_title}" ({release_year}) of type "{media_type}"')
         return None
     
     def get_media_state(self, media_id: int, media_type: str, is_4k: bool = False) -> Dict[str, Any]:
         """
-        Get the full state of a media item in Overseerr, including who requested it.
+        Get the full state of a media item in Seerr, including who requested it.
 
         The library-wide status alone can't answer "does *this* user already have
         a request?", which is what per-list users need to know before deciding
@@ -464,7 +464,7 @@ class SeerrClient:
         Args:
             media_id (int): Media ID (must be integer, not string)
             media_type (str): Media type (movie or tv)
-            is_4k (bool): Which resolution's requests to count, since Overseerr
+            is_4k (bool): Which resolution's requests to count, since Seerr
                 tracks 4K and non-4K requests separately
 
         Returns:
@@ -491,12 +491,12 @@ class SeerrClient:
             requested_by = self._extract_requester_ids(media_info, is_4k)
 
             logging.debug(
-                f"Overseerr {media_type} ID {media_id}: status={status}, "
+                f"Seerr {media_type} ID {media_id}: status={status}, "
                 f"seasons={number_of_seasons}, requested_by={sorted(requested_by) or 'nobody'}"
             )
 
             # Status codes:
-            # None: not in Overseerr's database yet
+            # None: not in Seerr's database yet
             # 0: NOT REQUESTED (available to request)
             # 1: REQUESTED (pending approval)
             # 2: PENDING (approved, waiting for download)
@@ -526,7 +526,7 @@ class SeerrClient:
         """
         Collect the IDs of users who already have a request on this media.
 
-        Only requests at the resolution being synced count, since Overseerr
+        Only requests at the resolution being synced count, since Seerr
         treats 4K and non-4K as separate requests. A declined request counts
         too: re-submitting it every sync would fight the admin who declined it.
         """
@@ -544,7 +544,7 @@ class SeerrClient:
 
     def get_media_status(self, media_id: int, media_type: str) -> Tuple[bool, bool, int]:
         """
-        Get the status of media in Overseerr.
+        Get the status of media in Seerr.
 
         Args:
             media_id (int): Media ID (must be integer, not string)
@@ -562,7 +562,7 @@ class SeerrClient:
         Extract the number of seasons from media data.
         
         Args:
-            media_data (dict): Media data from Overseerr
+            media_data (dict): Media data from Seerr
             
         Returns:
             int: Number of seasons (defaults to 1)
@@ -573,7 +573,7 @@ class SeerrClient:
     
     def request_media(self, media_id: int, media_type: str, is_4k: bool = False, requester_user_id: Optional[str] = None) -> str:
         """
-        Request media in Overseerr.
+        Request media in Seerr.
         
         Args:
             media_id (int): Media ID (must be integer, not string)
@@ -604,7 +604,7 @@ class SeerrClient:
 
     def request_tv_series(self, tv_id: int, number_of_seasons: int, is_4k: bool = False, requester_user_id: Optional[str] = None) -> str:
         """
-        Request TV series in Overseerr with specific seasons.
+        Request TV series in Seerr with specific seasons.
         
         Args:
             tv_id (int): TV series ID (must be integer, not string)
@@ -641,7 +641,7 @@ class SeerrClient:
 
     def request_specific_season(self, tv_id: int, season_number: int, is_4k: bool = False, requester_user_id: Optional[str] = None) -> str:
         """
-        Request a specific season of a TV series in Overseerr.
+        Request a specific season of a TV series in Seerr.
         
         Args:
             tv_id (int): TV series TMDB ID (must be integer, not string)

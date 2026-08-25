@@ -11,7 +11,7 @@ Policy differs by sink, so the caller says what it needs:
   * a Discord webhook only ever lives on Discord, so pass allowed_hosts
   * poster images only ever come from public CDNs, so private addresses are
     rejected outright
-  * Overseerr legitimately runs on a private address, so private is allowed
+  * Seerr legitimately runs on a private address, so private is allowed
     there - but cloud metadata never is, whatever the sink
 
 Known limitation: the hostname is resolved here and resolved again by the HTTP
@@ -107,7 +107,7 @@ def validate_outbound_url(
         raw_url (str): The URL to check
         allow_private (bool): Permit addresses on private networks. Set this
             only where a private target is expected, such as a self-hosted
-            Overseerr. Cloud metadata stays blocked either way.
+            Seerr. Cloud metadata stays blocked either way.
         allowed_hosts (Optional[Iterable[str]]): If given, the hostname must be
             one of these (or a subdomain of one).
 
