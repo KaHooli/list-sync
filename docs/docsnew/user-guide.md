@@ -581,7 +581,7 @@ version: "3.8"
 
 services:
   listsync-main:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=https://overseerr.example.com
       - OVERSEERR_API_KEY=${MAIN_API_KEY}
@@ -590,7 +590,7 @@ services:
       - ./data-main:/usr/src/app/data
 
   listsync-4k:
-    image: ghcr.io/woahai321/list-sync:main
+    image: ghcr.io/kahooli/list-sync:main
     environment:
       - OVERSEERR_URL=https://overseerr-4k.example.com
       - OVERSEERR_API_KEY=${4K_API_KEY}

@@ -64,7 +64,7 @@ ListSync now supports browsing and syncing entire movie franchises.
 **No configuration files needed!** Just run the container and open your browser.
 
 ```bash
-docker run -d --name listsync -p 3222:3222 -p 4222:4222 -v listsync-data:/usr/src/app/data ghcr.io/woahai321/list-sync:main
+docker run -d --name listsync -p 3222:3222 -p 4222:4222 -v listsync-data:/usr/src/app/data ghcr.io/kahooli/list-sync:main
 ```
 
 > **That's it!** Now go to [http://localhost:3222](http://localhost:3222) to finish setup.
