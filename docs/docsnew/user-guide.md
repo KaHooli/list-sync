@@ -79,7 +79,7 @@ flowchart TD
 
 1. **Clone and Configure**
    ```bash
-   git clone https://github.com/Woahai321/list-sync.git
+   git clone https://github.com/KaHooli/list-sync.git
    cd list-sync
    cp envsample.txt .env
    ```
