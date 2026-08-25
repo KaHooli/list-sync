@@ -1909,29 +1909,29 @@ async def test_overseerr_connection(data: dict):
     Test Overseerr connection with provided URL and API key.
     
     Expected data:
-        - overseerr_url: str
-        - overseerr_api_key: str
-        - overseerr_user_id: str (optional, defaults to "1")
+        - seerr_url: str
+        - seerr_api_key: str
+        - seerr_user_id: str (optional, defaults to "1")
     """
     try:
-        overseerr_url = data.get('overseerr_url', '').strip().rstrip('/')
-        overseerr_api_key = data.get('overseerr_api_key', '').strip()
-        overseerr_user_id = data.get('overseerr_user_id', '1').strip()
+        seerr_url = data.get('overseerr_url', '').strip().rstrip('/')
+        seerr_api_key = data.get('overseerr_api_key', '').strip()
+        seerr_user_id = data.get('overseerr_user_id', '1').strip()
         
         # Basic validation
-        if not overseerr_url:
+        if not seerr_url:
             return {
                 "valid": False,
                 "error": "Overseerr URL is required"
             }
         
-        if not overseerr_api_key:
+        if not seerr_api_key:
             return {
                 "valid": False,
                 "error": "Overseerr API Key is required"
             }
         
-        if not overseerr_url.startswith(('http://', 'https://')):
+        if not seerr_url.startswith(('http://', 'https://')):
             return {
                 "valid": False,
                 "error": "URL must start with http:// or https://"
@@ -1942,7 +1942,7 @@ async def test_overseerr_connection(data: dict):
         # permitted, but cloud metadata endpoints and non-HTTP schemes never are.
         from list_sync.utils.url_safety import validate_outbound_url
 
-        url_ok, url_reason = validate_outbound_url(overseerr_url, allow_private=True)
+        url_ok, url_reason = validate_outbound_url(seerr_url, allow_private=True)
         if not url_ok:
             logging.warning(f"Blocked Overseerr connection test: {url_reason}")
             return {
@@ -1952,12 +1952,12 @@ async def test_overseerr_connection(data: dict):
 
         # Test connection by fetching user list and finding the default user
         try:
-            headers = {"X-Api-Key": overseerr_api_key}
+            headers = {"X-Api-Key": seerr_api_key}
             
-            logging.info(f"Testing Overseerr API key validation with endpoint: {overseerr_url}/api/v1/user")
+            logging.info(f"Testing Overseerr API key validation with endpoint: {seerr_url}/api/v1/user")
             
             # Fetch all users to validate API key and get user info
-            user_response = requests.get(f"{overseerr_url}/api/v1/user", headers=headers, timeout=10, params={"take": 100})
+            user_response = requests.get(f"{seerr_url}/api/v1/user", headers=headers, timeout=10, params={"take": 100})
             
             logging.info(f"Overseerr API key test response status: {user_response.status_code}")
             
@@ -1985,7 +1985,7 @@ async def test_overseerr_connection(data: dict):
             # Save all users to database for future use
             if users:
                 try:
-                    from list_sync.database import save_overseerr_users
+                    from list_sync.database import save_seerr_users
                     formatted_users = []
                     for user in users:
                         formatted_users.append({
@@ -1994,7 +1994,7 @@ async def test_overseerr_connection(data: dict):
                             'email': user.get('email', ''),
                             'avatar': user.get('avatar', '')
                         })
-                    save_overseerr_users(formatted_users)
+                    save_seerr_users(formatted_users)
                     logging.info(f"Pre-populated {len(formatted_users)} Overseerr users to database during setup")
                 except Exception as e:
                     # Don't fail the test if user save fails
@@ -2003,16 +2003,16 @@ async def test_overseerr_connection(data: dict):
             # Find the specified user (default is user ID 1)
             default_user = None
             for user in users:
-                if str(user.get('id')) == str(overseerr_user_id):
+                if str(user.get('id')) == str(seerr_user_id):
                     default_user = user
                     break
             
             if not default_user and users:
                 # If specified user not found, return error
-                logging.warning(f"User ID {overseerr_user_id} not found in Overseerr")
+                logging.warning(f"User ID {seerr_user_id} not found in Overseerr")
                 return {
                     "valid": False,
-                    "error": f"User ID {overseerr_user_id} not found. Please check the User ID."
+                    "error": f"User ID {seerr_user_id} not found. Please check the User ID."
                 }
             elif not users:
                 # No users found at all
@@ -2024,7 +2024,7 @@ async def test_overseerr_connection(data: dict):
             
             # Also test /api/v1/status to get version info
             try:
-                status_response = requests.get(f"{overseerr_url}/api/v1/status", headers=headers, timeout=5)
+                status_response = requests.get(f"{seerr_url}/api/v1/status", headers=headers, timeout=5)
                 status_data = status_response.json() if status_response.status_code == 200 else {}
             except:
                 status_data = {}
@@ -2083,12 +2083,12 @@ async def test_overseerr_connection(data: dict):
 
 
 @app.get("/api/overseerr/users")
-async def get_overseerr_users_endpoint():
+async def get_seerr_users_endpoint():
     """Get all Overseerr users from database"""
     try:
-        from list_sync.database import get_overseerr_users
+        from list_sync.database import get_seerr_users
         
-        users = get_overseerr_users()
+        users = get_seerr_users()
         
         return {
             "success": True,
@@ -2101,26 +2101,26 @@ async def get_overseerr_users_endpoint():
 
 
 @app.post("/api/overseerr/users/sync")
-async def sync_overseerr_users_endpoint():
+async def sync_seerr_users_endpoint():
     """Sync Overseerr users from Overseerr API to database"""
     try:
         from list_sync.config import ConfigManager
-        from list_sync.database import save_overseerr_users
+        from list_sync.database import save_seerr_users
         from urllib.parse import quote
         
         # Get Overseerr credentials from config
         config = ConfigManager()
-        overseerr_url = config.get_setting('overseerr_url')
-        overseerr_api_key = config.get_setting('overseerr_api_key')
+        seerr_url = config.get_setting('overseerr_url')
+        seerr_api_key = config.get_setting('overseerr_api_key')
         
-        if not overseerr_url or not overseerr_api_key:
+        if not seerr_url or not seerr_api_key:
             raise HTTPException(
                 status_code=400,
                 detail="Overseerr URL and API key must be configured"
             )
         
         # Fetch users from Overseerr API
-        headers = {"X-Api-Key": overseerr_api_key}
+        headers = {"X-Api-Key": seerr_api_key}
         
         # Get all users (paginated)
         all_users = []
@@ -2129,7 +2129,7 @@ async def sync_overseerr_users_endpoint():
         
         while True:
             response = requests.get(
-                f"{overseerr_url.rstrip('/')}/api/v1/user",
+                f"{seerr_url.rstrip('/')}/api/v1/user",
                 headers=headers,
                 params={"take": take, "skip": (page - 1) * take},
                 timeout=10
@@ -2162,8 +2162,8 @@ async def sync_overseerr_users_endpoint():
         for user in all_users:
             avatar = user.get('avatar', '')
             full_avatar = avatar
-            if avatar and overseerr_url and avatar.startswith('/'):
-                full_avatar = f"{overseerr_url.rstrip('/')}{avatar}"
+            if avatar and seerr_url and avatar.startswith('/'):
+                full_avatar = f"{seerr_url.rstrip('/')}{avatar}"
             
             # Use proxy endpoint to enable caching on first use
             proxied_avatar = None
@@ -2178,7 +2178,7 @@ async def sync_overseerr_users_endpoint():
             })
         
         # Save to database
-        save_overseerr_users(formatted_users)
+        save_seerr_users(formatted_users)
         
         logging.info(f"Synced {len(formatted_users)} Overseerr users to database")
         
@@ -2333,9 +2333,9 @@ async def save_step1_essential(data: dict):
     Save and validate Step 1: Essential configuration (Overseerr).
     
     Expected data:
-        - overseerr_url: str
-        - overseerr_api_key: str
-        - overseerr_user_id: str
+        - seerr_url: str
+        - seerr_api_key: str
+        - seerr_user_id: str
         - overseerr_4k: bool
     """
     try:
@@ -2345,34 +2345,34 @@ async def save_step1_essential(data: dict):
         errors = {}
         
         # Validate Overseerr URL
-        overseerr_url = data.get('overseerr_url', '').strip().rstrip('/')
-        if not overseerr_url:
+        seerr_url = data.get('overseerr_url', '').strip().rstrip('/')
+        if not seerr_url:
             errors['overseerr_url'] = 'Overseerr URL is required'
-        elif not overseerr_url.startswith(('http://', 'https://')):
+        elif not seerr_url.startswith(('http://', 'https://')):
             errors['overseerr_url'] = 'URL must start with http:// or https://'
         else:
             # This URL gets fetched by the server below, so refuse the targets
             # that are never a real Overseerr. Private addresses stay allowed:
             # a self-hosted instance is normally on one.
             from list_sync.utils.url_safety import validate_outbound_url
-            _ok, _reason = validate_outbound_url(overseerr_url, allow_private=True)
+            _ok, _reason = validate_outbound_url(seerr_url, allow_private=True)
             if not _ok:
                 errors['overseerr_url'] = _reason
         
         # Validate Overseerr API Key
-        overseerr_api_key = data.get('overseerr_api_key', '').strip()
-        if not overseerr_api_key:
+        seerr_api_key = data.get('overseerr_api_key', '').strip()
+        if not seerr_api_key:
             errors['overseerr_api_key'] = 'Overseerr API Key is required'
         
         # Test Overseerr connection if no errors so far
         # Use /api/v1/user endpoint which REQUIRES authentication to properly validate API key
-        if not errors and overseerr_url and overseerr_api_key:
+        if not errors and seerr_url and seerr_api_key:
             try:
-                headers = {"X-Api-Key": overseerr_api_key}
-                overseerr_user_id = data.get('overseerr_user_id', '1').strip()
+                headers = {"X-Api-Key": seerr_api_key}
+                seerr_user_id = data.get('overseerr_user_id', '1').strip()
                 
                 # Test with /api/v1/user to validate API key and get user info
-                response = requests.get(f"{overseerr_url}/api/v1/user", headers=headers, timeout=10, params={"take": 100})
+                response = requests.get(f"{seerr_url}/api/v1/user", headers=headers, timeout=10, params={"take": 100})
                 
                 # If we get 401, the API key is invalid
                 if response.status_code == 401:
@@ -2389,11 +2389,11 @@ async def save_step1_essential(data: dict):
                     # Verify the specified user exists
                     user_data = response.json()
                     users = user_data.get('results', [])
-                    user_found = any(str(user.get('id')) == str(overseerr_user_id) for user in users)
+                    user_found = any(str(user.get('id')) == str(seerr_user_id) for user in users)
                     
                     if not user_found and users:
-                        errors['overseerr_user_id'] = f'User ID {overseerr_user_id} not found in Overseerr.'
-                        logging.error(f"Overseerr user validation failed: User ID {overseerr_user_id} not found")
+                        errors['overseerr_user_id'] = f'User ID {seerr_user_id} not found in Overseerr.'
+                        logging.error(f"Overseerr user validation failed: User ID {seerr_user_id} not found")
                     else:
                         logging.info("Overseerr connection test successful - API key validated")
             except requests.exceptions.Timeout:
@@ -2420,8 +2420,8 @@ async def save_step1_essential(data: dict):
             }
         
         # Save settings to database
-        config.save_setting('overseerr_url', overseerr_url)
-        config.save_setting('overseerr_api_key', overseerr_api_key)
+        config.save_setting('overseerr_url', seerr_url)
+        config.save_setting('overseerr_api_key', seerr_api_key)
         config.save_setting('overseerr_user_id', data.get('overseerr_user_id', '1'))
         config.save_setting('overseerr_4k', data.get('overseerr_4k', False))
         
@@ -3183,10 +3183,10 @@ async def get_lists_debug():
 def _overseerr_user_names() -> Dict[str, str]:
     """Map Overseerr user IDs to display names, from the local user cache."""
     try:
-        from list_sync.database import get_overseerr_users
+        from list_sync.database import get_seerr_users
         return {
             str(u.get('id')): (u.get('display_name') or u.get('email') or '')
-            for u in (get_overseerr_users() or [])
+            for u in (get_seerr_users() or [])
         }
     except Exception as e:
         logging.debug(f"Could not load Overseerr user names: {e}")
@@ -3207,8 +3207,8 @@ def _validate_overseerr_user(user_id: str) -> Optional[str]:
             None if the user is fine or can't be verified right now.
     """
     try:
-        from list_sync.database import get_overseerr_users
-        users = get_overseerr_users()
+        from list_sync.database import get_seerr_users
+        users = get_seerr_users()
     except Exception as e:
         logging.debug(f"Could not verify user {user_id}: {e}")
         return None
@@ -3514,7 +3514,7 @@ async def get_enriched_items(
         
         # Get overseerr URL for constructing links
         config_tuple = load_env_config()
-        overseerr_url = config_tuple[0] if config_tuple else None
+        seerr_url = config_tuple[0] if config_tuple else None
         
         # Batch fetch tmdb_ids, poster URLs, and list sources from database (more efficient)
         item_ids = [item[0] for item in page_items]
@@ -3623,9 +3623,9 @@ async def get_enriched_items(
             }
             
             # Construct Overseerr URL if available
-            if overseerr_id and overseerr_url:
+            if overseerr_id and seerr_url:
                 media_type_path = "tv" if media_type == "tv" else "movie"
-                enriched_item["overseerr_url"] = f"{overseerr_url.rstrip('/')}/{media_type_path}/{overseerr_id}"
+                enriched_item["overseerr_url"] = f"{seerr_url.rstrip('/')}/{media_type_path}/{overseerr_id}"
             
             # Skip enrichment if no IDs available
             if not tmdb_id and not imdb_id:
@@ -3713,9 +3713,9 @@ async def get_overseerr_status():
     try:
         # Load environment configuration - returns a tuple
         config_tuple = load_env_config()
-        overseerr_url, overseerr_api_key, user_id, sync_interval, automated_mode, is_4k = config_tuple
+        seerr_url, seerr_api_key, user_id, sync_interval, automated_mode, is_4k = config_tuple
         
-        if not overseerr_url or not overseerr_api_key:
+        if not seerr_url or not seerr_api_key:
             return {
                 "isConnected": False,
                 "error": "Overseerr URL or API key not configured",
@@ -3724,12 +3724,12 @@ async def get_overseerr_status():
         
         # Make request to Overseerr status endpoint
         headers = {
-            'X-Api-Key': overseerr_api_key,
+            'X-Api-Key': seerr_api_key,
             'Content-Type': 'application/json'
         }
         
         # Clean URL and add status endpoint
-        base_url = overseerr_url.rstrip('/')
+        base_url = seerr_url.rstrip('/')
         status_url = f"{base_url}/api/v1/status"
         
         response = requests.get(status_url, headers=headers, timeout=10)
@@ -3975,8 +3975,8 @@ async def trigger_manual_sync(sync_request: dict = None):
         print(f"Error triggering manual sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def _run_sync_in_subprocess(list_type: str, list_id: str, overseerr_url: str, 
-                            overseerr_api_key: str, is_4k: bool, result_queue: multiprocessing.Queue):
+def _run_sync_in_subprocess(list_type: str, list_id: str, seerr_url: str, 
+                            seerr_api_key: str, is_4k: bool, result_queue: multiprocessing.Queue):
     """
     Worker function to run sync in a subprocess.
     This function is called by multiprocessing.Process.
@@ -3993,8 +3993,8 @@ def _run_sync_in_subprocess(list_type: str, list_id: str, overseerr_url: str,
         result = sync_single_list(
             list_type,
             list_id,
-            overseerr_url,
-            overseerr_api_key,
+            seerr_url,
+            seerr_api_key,
             None,  # Let sync_single_list fetch user_id from list's database record
             is_4k
         )
@@ -4042,9 +4042,9 @@ async def trigger_single_list_sync(target_list: dict, processes: list):
             print(f"DEBUG - Import successful, loading environment config...")
             
             # Load environment configuration
-            overseerr_url, overseerr_api_key, _, sync_interval, automated_mode, is_4k = load_env_config()
+            seerr_url, seerr_api_key, _, sync_interval, automated_mode, is_4k = load_env_config()
             
-            print(f"DEBUG - Environment loaded. URL: {overseerr_url[:20] if overseerr_url else 'None'}...")
+            print(f"DEBUG - Environment loaded. URL: {seerr_url[:20] if seerr_url else 'None'}...")
             print(f"DEBUG - Starting sync in subprocess for immediate termination support...")
             
             # Create a queue to receive results from subprocess
@@ -4053,7 +4053,7 @@ async def trigger_single_list_sync(target_list: dict, processes: list):
             # Create and start subprocess
             sync_process = multiprocessing.Process(
                 target=_run_sync_in_subprocess,
-                args=(list_type, list_id, overseerr_url, overseerr_api_key, is_4k, result_queue)
+                args=(list_type, list_id, seerr_url, seerr_api_key, is_4k, result_queue)
             )
             sync_process.start()
             subprocess_pid = sync_process.pid
@@ -4547,10 +4547,10 @@ async def get_processed_items(
         
         # Get Overseerr base URL for generating item links
         try:
-            overseerr_base_url, _, _, _, _, _ = load_env_config()
-            overseerr_base_url = overseerr_base_url.rstrip('/') if overseerr_base_url else None
+            seerr_base_url, _, _, _, _, _ = load_env_config()
+            seerr_base_url = seerr_base_url.rstrip('/') if seerr_base_url else None
         except:
-            overseerr_base_url = None
+            seerr_base_url = None
         
         # Batch fetch list sources for all items (before filtering)
         item_ids = [item.get('id') for item in all_items if item.get('id')]
@@ -4597,10 +4597,10 @@ async def get_processed_items(
             except Exception as e:
                 logging.warning(f"Failed to batch fetch list sources: {e}")
         
-        # Add overseerr_url and list_sources to items
+        # Add seerr_url and list_sources to items
         for item in all_items:
-            if overseerr_base_url and item.get('overseerr_id'):
-                item['overseerr_url'] = f"{overseerr_base_url}/{item['media_type']}/{item['overseerr_id']}"
+            if seerr_base_url and item.get('overseerr_id'):
+                item['overseerr_url'] = f"{seerr_base_url}/{item['media_type']}/{item['overseerr_id']}"
             else:
                 item['overseerr_url'] = None
             
@@ -4717,15 +4717,15 @@ async def get_successful_items(
         
         # Get Overseerr base URL for generating item links
         try:
-            overseerr_base_url, _, _, _, _, _ = load_env_config()
-            overseerr_base_url = overseerr_base_url.rstrip('/') if overseerr_base_url else None
+            seerr_base_url, _, _, _, _, _ = load_env_config()
+            seerr_base_url = seerr_base_url.rstrip('/') if seerr_base_url else None
         except:
-            overseerr_base_url = None
+            seerr_base_url = None
         
-        # Add overseerr_url to items
+        # Add seerr_url to items
         for item in all_items:
-            if overseerr_base_url and item.get('overseerr_id'):
-                item['overseerr_url'] = f"{overseerr_base_url}/{item['media_type']}/{item['overseerr_id']}"
+            if seerr_base_url and item.get('overseerr_id'):
+                item['overseerr_url'] = f"{seerr_base_url}/{item['media_type']}/{item['overseerr_id']}"
             else:
                 item['overseerr_url'] = None
         
@@ -4872,19 +4872,19 @@ async def get_requested_items(
         
         # Get Overseerr base URL for generating item links
         try:
-            overseerr_base_url, _, _, _, _, _ = load_env_config()
-            overseerr_base_url = overseerr_base_url.rstrip('/') if overseerr_base_url else None
+            seerr_base_url, _, _, _, _, _ = load_env_config()
+            seerr_base_url = seerr_base_url.rstrip('/') if seerr_base_url else None
         except:
-            overseerr_base_url = None
+            seerr_base_url = None
         
         formatted_items = []
         for item in items:
             item_id, title, media_type, imdb_id, overseerr_id, status, last_synced = item
             
             # Generate Overseerr URL if we have the base URL and overseerr_id
-            overseerr_url = None
-            if overseerr_base_url and overseerr_id:
-                overseerr_url = f"{overseerr_base_url}/{media_type}/{overseerr_id}"
+            seerr_url = None
+            if seerr_base_url and overseerr_id:
+                seerr_url = f"{seerr_base_url}/{media_type}/{overseerr_id}"
             
             formatted_items.append({
                 "id": item_id,
@@ -4895,7 +4895,7 @@ async def get_requested_items(
                 "status": status,
                 "timestamp": last_synced,
                 "action": "Requested",  # Since we only show 'requested' status now
-                "overseerr_url": overseerr_url
+                "overseerr_url": seerr_url
             })
         
         return {
@@ -5287,7 +5287,7 @@ async def request_single_media(request: Request):
     """Request a single media item to Overseerr (one-time sync, not a list)"""
     try:
         from list_sync.config import load_env_config
-        from list_sync.api.overseerr import OverseerrClient
+        from list_sync.api.seerr import SeerrClient
         
         body = await request.json()
         tmdb_id = body.get("tmdb_id")
@@ -5311,7 +5311,7 @@ async def request_single_media(request: Request):
         if not config_tuple or not config_tuple[0] or not config_tuple[1]:
             raise HTTPException(status_code=400, detail="Overseerr not configured")
         
-        overseerr_url, api_key, requester_user_id = config_tuple[0], config_tuple[1], config_tuple[2] or "1"
+        seerr_url, api_key, requester_user_id = config_tuple[0], config_tuple[1], config_tuple[2] or "1"
         is_4k_config = config_tuple[5] if len(config_tuple) > 5 else False
         
         # Use config 4K setting if not explicitly provided
@@ -5319,10 +5319,10 @@ async def request_single_media(request: Request):
             is_4k = is_4k_config
         
         # Create Overseerr client
-        overseerr_client = OverseerrClient(overseerr_url, api_key, requester_user_id)
+        seerr_client = SeerrClient(seerr_url, api_key, requester_user_id)
         
         # Get media by TMDB ID to get Overseerr ID
-        media_data = overseerr_client.get_media_by_tmdb_id(tmdb_id, media_type)
+        media_data = seerr_client.get_media_by_tmdb_id(tmdb_id, media_type)
         
         if not media_data:
             return {
@@ -5340,7 +5340,7 @@ async def request_single_media(request: Request):
             }
         
         # Check current status
-        is_available, is_requested, _ = overseerr_client.get_media_status(overseerr_id, media_type)
+        is_available, is_requested, _ = seerr_client.get_media_status(overseerr_id, media_type)
         
         if is_requested:
             return {
@@ -5359,7 +5359,7 @@ async def request_single_media(request: Request):
             }
         
         # Request the media
-        request_status = overseerr_client.request_media(overseerr_id, media_type, is_4k, requester_user_id=None)
+        request_status = seerr_client.request_media(overseerr_id, media_type, is_4k, requester_user_id=None)
         
         if request_status == "success":
             return {
@@ -5390,8 +5390,8 @@ async def request_single_media(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _run_collection_sync_in_subprocess(list_type: str, list_id: str, overseerr_url: str, 
-                                       overseerr_api_key: str, user_id: str, is_4k: bool, 
+def _run_collection_sync_in_subprocess(list_type: str, list_id: str, seerr_url: str, 
+                                       seerr_api_key: str, user_id: str, is_4k: bool, 
                                        result_queue: multiprocessing.Queue):
     """
     Worker function to run collection sync in a subprocess.
@@ -5409,8 +5409,8 @@ def _run_collection_sync_in_subprocess(list_type: str, list_id: str, overseerr_u
         result = sync_single_list(
             list_type,
             list_id,
-            overseerr_url,
-            overseerr_api_key,
+            seerr_url,
+            seerr_api_key,
             user_id,
             is_4k,
             False  # dry_run
@@ -5436,7 +5436,7 @@ async def sync_collection(franchise_name: str):
         if not config_tuple or not config_tuple[0] or not config_tuple[1]:
             raise HTTPException(status_code=400, detail="Overseerr not configured")
         
-        overseerr_url, api_key, requester_user_id = config_tuple[0], config_tuple[1], config_tuple[2] or "1"
+        seerr_url, api_key, requester_user_id = config_tuple[0], config_tuple[1], config_tuple[2] or "1"
         is_4k = config_tuple[5] if len(config_tuple) > 5 else False
         
         # Create a queue to receive results from subprocess
@@ -5445,7 +5445,7 @@ async def sync_collection(franchise_name: str):
         # Create and start subprocess for immediate termination support
         sync_process = multiprocessing.Process(
             target=_run_collection_sync_in_subprocess,
-            args=("collections", decoded_name, overseerr_url, api_key, requester_user_id, is_4k, result_queue)
+            args=("collections", decoded_name, seerr_url, api_key, requester_user_id, is_4k, result_queue)
         )
         sync_process.start()
         subprocess_pid = sync_process.pid
@@ -6764,9 +6764,9 @@ async def get_overseerr_config():
     try:
         # Load environment configuration - returns a tuple
         config_tuple = load_env_config()
-        overseerr_url, overseerr_api_key, user_id, sync_interval, automated_mode, is_4k = config_tuple
+        seerr_url, seerr_api_key, user_id, sync_interval, automated_mode, is_4k = config_tuple
         
-        if not overseerr_url:
+        if not seerr_url:
             return {
                 "configured": False,
                 "base_url": None,
@@ -6774,7 +6774,7 @@ async def get_overseerr_config():
             }
         
         # Clean URL and return base URL for frontend
-        base_url = overseerr_url.rstrip('/')
+        base_url = seerr_url.rstrip('/')
         
         return {
             "configured": True,
@@ -6805,8 +6805,8 @@ async def get_settings():
             return value
         
         # Get all settings (database or env fallback)
-        overseerr_url = get_setting_safe('overseerr_url', '')
-        overseerr_api_key = get_setting_safe('overseerr_api_key', '', mask=True)
+        seerr_url = get_setting_safe('overseerr_url', '')
+        seerr_api_key = get_setting_safe('overseerr_api_key', '', mask=True)
         user_id = get_setting_safe('overseerr_user_id', '1')
         is_4k = get_setting_safe('overseerr_4k', False)
         
@@ -6854,8 +6854,8 @@ async def get_settings():
         
         return {
             # Overseerr Configuration
-            "overseerr_url": overseerr_url or '',
-            "overseerr_api_key": overseerr_api_key or '',
+            "overseerr_url": seerr_url or '',
+            "overseerr_api_key": seerr_api_key or '',
             "overseerr_user_id": user_id or '1',
             "overseerr_4k": is_4k,
             

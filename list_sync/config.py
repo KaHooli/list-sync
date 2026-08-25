@@ -107,16 +107,16 @@ def decrypt_config(encrypted_data, password):
     fernet = Fernet(key)
     return json.loads(fernet.decrypt(encrypted_data).decode())
 
-def save_config(overseerr_url, api_key, requester_user_id):
+def save_config(seerr_url, api_key, requester_user_id):
     """
     Save configuration to encrypted file.
     
     Args:
-        overseerr_url (str): Overseerr URL
+        seerr_url (str): Overseerr URL
         api_key (str): API key
         requester_user_id (str): Requester user ID
     """
-    config = {"overseerr_url": overseerr_url, "api_key": api_key, "requester_user_id": requester_user_id}
+    config = {"overseerr_url": seerr_url, "api_key": api_key, "requester_user_id": requester_user_id}
     print(color_gradient("🔐  Enter a password to encrypt your API details: ", "#ff0000", "#aa0000"), end="")
     password = getpass.getpass("")
     encrypted_config = encrypt_config(config, password)
@@ -157,10 +157,10 @@ def load_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
                     return None, None, None
     return None, None, None
 
-def test_overseerr_api(overseerr_url, api_key):
+def test_overseerr_api(seerr_url, api_key):
     """Test Overseerr API connection."""
     headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
-    test_url = f"{overseerr_url}/api/v1/status"
+    test_url = f"{seerr_url}/api/v1/status"
     spinner = Halo(text=color_gradient("🔍  Testing API connection...", "#ffaa00", "#ff5500"), spinner="dots")
     spinner.start()
     try:
@@ -175,10 +175,10 @@ def test_overseerr_api(overseerr_url, api_key):
         logging.error(f"Overseerr API connection failed. Error: {str(e)}")
         raise
 
-def set_requester_user(overseerr_url, api_key):
+def set_requester_user(seerr_url, api_key):
     """Set the requester user for API requests."""
     headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
-    users_url = f"{overseerr_url}/api/v1/user"
+    users_url = f"{seerr_url}/api/v1/user"
     try:
         requester_user_id = "1"
         response = requests.get(users_url, headers=headers)

@@ -18,19 +18,19 @@ PERMISSION_REQUEST_MOVIE = 262144
 PERMISSION_REQUEST_TV = 524288
 
 
-class OverseerrClient:
+class SeerrClient:
     """Client for interacting with the Overseerr API."""
     
-    def __init__(self, overseerr_url: str, api_key: str, requester_user_id: str = "1"):
+    def __init__(self, seerr_url: str, api_key: str, requester_user_id: str = "1"):
         """
         Initialize the Overseerr API client.
         
         Args:
-            overseerr_url (str): Overseerr server URL
+            seerr_url (str): Overseerr server URL
             api_key (str): API key
             requester_user_id (str, optional): Requester user ID. Defaults to "1".
         """
-        self.overseerr_url = overseerr_url.rstrip('/')
+        self.seerr_url = seerr_url.rstrip('/')
         self.api_key = api_key
         self.requester_user_id = requester_user_id
         self.headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
@@ -68,7 +68,7 @@ class OverseerrClient:
             str: "success", "already_requested", or "error"
         """
         user_id = str(requester_user_id or self.requester_user_id or "1")
-        request_url = f"{self.overseerr_url}/api/v1/request"
+        request_url = f"{self.seerr_url}/api/v1/request"
 
         try:
             response = requests.post(
@@ -93,7 +93,7 @@ class OverseerrClient:
             if status_code == 401:
                 logging.error(
                     f"❌ {description}: Overseerr rejected user_id {user_id} (401). "
-                    f"No user with that ID exists on {self.overseerr_url}. "
+                    f"No user with that ID exists on {self.seerr_url}. "
                     f"Check the user assigned to this list against Settings → Users in Overseerr."
                 )
                 return "error"
@@ -158,7 +158,7 @@ class OverseerrClient:
         if use_cache and self._users_cache is not None:
             return self._users_cache
 
-        users_url = f"{self.overseerr_url}/api/v1/user"
+        users_url = f"{self.seerr_url}/api/v1/user"
         try:
             # take=0 is rejected by some builds; ask for a large page instead
             response = requests.get(
@@ -227,7 +227,7 @@ class OverseerrClient:
         Raises:
             Exception: If the connection test fails
         """
-        test_url = f"{self.overseerr_url}/api/v1/status"
+        test_url = f"{self.seerr_url}/api/v1/status"
         try:
             response = requests.get(test_url, headers=self.headers)
             response.raise_for_status()
@@ -244,7 +244,7 @@ class OverseerrClient:
         Returns:
             str: The requester user ID
         """
-        users_url = f"{self.overseerr_url}/api/v1/user"
+        users_url = f"{self.seerr_url}/api/v1/user"
         try:
             requester_user_id = "1"
             response = requests.get(users_url, headers=self.headers)
@@ -277,7 +277,7 @@ class OverseerrClient:
         Returns:
             Optional[Dict[str, Any]]: Media details with ID and status or None if not found
         """
-        media_url = f"{self.overseerr_url}/api/v1/{media_type}/{tmdb_id}"
+        media_url = f"{self.seerr_url}/api/v1/{media_type}/{tmdb_id}"
         
         try:
             logging.info(f"🎯 Overseerr API: Direct lookup by TMDB ID: {tmdb_id} [{media_type}]")
@@ -338,7 +338,7 @@ class OverseerrClient:
             Optional[Dict[str, Any]]: Search result or None if not found
         """
         logging.info(f"🔍 Overseerr API: Fallback search by title: '{media_title}' ({release_year}) [{media_type}]")
-        search_url = f"{self.overseerr_url}/api/v1/search"
+        search_url = f"{self.seerr_url}/api/v1/search"
         search_title = media_title  # Use the provided title
         
         page = 1
@@ -478,7 +478,7 @@ class OverseerrClient:
             logging.error(f"Invalid media_id type in get_media_status: {type(media_id)} = {media_id}")
             raise ValueError(f"media_id must be an integer, got {type(media_id)}: {media_id}")
 
-        media_url = f"{self.overseerr_url}/api/v1/{media_type}/{media_id}"
+        media_url = f"{self.seerr_url}/api/v1/{media_type}/{media_id}"
 
         try:
             response = requests.get(media_url, headers=self.headers, timeout=15)

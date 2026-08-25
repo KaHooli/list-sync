@@ -2,6 +2,6 @@
 API client modules for ListSync.
 """
 
-from .overseerr import OverseerrClient
+from .seerr import SeerrClient
 
-__all__ = ['OverseerrClient']
+__all__ = ['SeerrClient']

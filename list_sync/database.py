@@ -1383,10 +1383,14 @@ def count_settings() -> int:
 # Overseerr Users Management
 # ============================================================================
 
-def save_overseerr_users(users: List[Dict[str, Any]]):
+def save_seerr_users(users: List[Dict[str, Any]]):
     """
-    Save Overseerr users to database, replacing existing users.
-    
+    Save Seerr users to database, replacing existing users.
+
+    The table is still called overseerr_users: renaming it would need a
+    migration on every existing install, which buys nothing since the name
+    never leaves this file.
+
     Args:
         users: List of user dictionaries with keys: id, display_name, email, avatar
     """
@@ -1412,7 +1416,7 @@ def save_overseerr_users(users: List[Dict[str, Any]]):
         logging.info(f"Saved {len(users)} Overseerr users to database")
 
 
-def get_overseerr_users() -> List[Dict[str, Any]]:
+def get_seerr_users() -> List[Dict[str, Any]]:
     """
     Get all Overseerr users from database.
     
@@ -1471,7 +1475,7 @@ def get_overseerr_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def clear_overseerr_users():
+def clear_seerr_users():
     """Clear all Overseerr users from database."""
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()

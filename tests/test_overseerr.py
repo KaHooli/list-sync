@@ -1,4 +1,4 @@
-"""Check OverseerrClient classifies each Seerr failure mode correctly."""
+"""Check SeerrClient classifies each Seerr failure mode correctly."""
 import os, sys, types, logging
 
 import os, sys
@@ -13,7 +13,7 @@ for name in ("seleniumbase", "bs4", "dotenv"):
         sys.modules[name] = mod
 
 import requests
-from list_sync.api.overseerr import OverseerrClient
+from list_sync.api.seerr import SeerrClient
 
 fail = []
 def check(label, got, want):
@@ -44,7 +44,7 @@ def make_post(response):
         return response
     return _post
 
-client = OverseerrClient("https://seerr.example.com/", "KEY", "1")
+client = SeerrClient("https://seerr.example.com/", "KEY", "1")
 
 # The requester must travel as X-Api-User, not as the client default.
 requests.post = make_post(FakeResponse(201, {"id": 5}))
