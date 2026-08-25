@@ -2,12 +2,27 @@
 In-memory sync status tracking for real-time sync state monitoring.
 """
 
+import logging
 import threading
 import datetime
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, asdict
 import json
 import os
+
+
+# A running sync bumps its database row every few seconds (see
+# start_sync_heartbeat). A row that has not been touched for this long belongs
+# to a sync that died without cleaning up - a crash, a kill, or a container
+# restart - and must not keep the UI reporting "Sync in Progress" forever.
+DEFAULT_SYNC_STALE_SECONDS = 15 * 60
+
+# How often a running sync writes its heartbeat.
+SYNC_HEARTBEAT_INTERVAL_SECONDS = 30
+
+# A record is only judged on a dead PID once it is this old, so a sync that has
+# just written its row is never mistaken for an abandoned one.
+_MIN_AGE_BEFORE_PID_CHECK_SECONDS = 60
 
 
 @dataclass
@@ -210,3 +225,198 @@ def clear_pause_until():
     if _PAUSE_KEY in data:
         data.pop(_PAUSE_KEY, None)
         _write_cancel_requests(data)
+
+
+# ---------------------------------------------
+# Liveness of in-progress sync records
+# ---------------------------------------------
+
+def get_stale_timeout_seconds() -> int:
+    """How long a sync record may go untouched before it counts as abandoned."""
+    raw = os.getenv("LISTSYNC_SYNC_STALE_MINUTES")
+    if raw:
+        try:
+            minutes = float(raw)
+            if minutes > 0:
+                return int(minutes * 60)
+        except (TypeError, ValueError):
+            logging.warning(f"Ignoring invalid LISTSYNC_SYNC_STALE_MINUTES={raw!r}")
+    return DEFAULT_SYNC_STALE_SECONDS
+
+
+def parse_db_timestamp(value: Any) -> Optional[datetime.datetime]:
+    """
+    Parse a sync_history timestamp into an aware UTC datetime.
+
+    SQLite writes CURRENT_TIMESTAMP as naive UTC ("YYYY-MM-DD HH:MM:SS"), so a
+    naive value has to be read as UTC. Reading it as local time would place
+    every sync hours into the past or the future on any non-UTC deployment.
+    """
+    if not value:
+        return None
+
+    if isinstance(value, datetime.datetime):
+        parsed = value
+    else:
+        text = str(value).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = None
+        try:
+            parsed = datetime.datetime.fromisoformat(text)
+        except ValueError:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    parsed = datetime.datetime.strptime(text, fmt)
+                    break
+                except ValueError:
+                    continue
+
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed.astimezone(datetime.timezone.utc)
+
+
+def pid_is_alive(pid: int) -> Optional[bool]:
+    """
+    Whether a process exists, or None when that cannot be determined.
+
+    psutil is only a dependency of the API server, so the core-only image falls
+    back to a signal-0 probe rather than losing the check entirely.
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+
+    if psutil is not None:
+        try:
+            return psutil.pid_exists(pid)
+        except Exception:
+            return None
+
+    # os.kill with signal 0 only probes on POSIX; on Windows it terminates.
+    if os.name != "posix":
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, just owned by another user
+    except OSError:
+        return None
+    return True
+
+
+def get_sync_last_activity(sync_record: Dict[str, Any]) -> Optional[datetime.datetime]:
+    """Most recent sign of life for a sync record, as an aware UTC datetime."""
+    if not sync_record:
+        return None
+    return (
+        parse_db_timestamp(sync_record.get('last_heartbeat'))
+        or parse_db_timestamp(sync_record.get('start_time'))
+    )
+
+
+def get_sync_staleness_reason(
+    sync_record: Dict[str, Any],
+    now: Optional[datetime.datetime] = None,
+    stale_after_seconds: Optional[int] = None
+) -> Optional[str]:
+    """
+    Explain why an in-progress sync record is abandoned, or None if it looks alive.
+
+    Note that "the recorded PID is alive" is *not* evidence that the sync is
+    running: full syncs record the PID of the long-lived core process, which
+    outlives every sync it runs. Liveness therefore comes from the heartbeat,
+    with a dead PID only used to spot an abandoned record sooner.
+
+    Args:
+        sync_record: A sync_history row (as a dict) with in_progress = 1
+        now: Current time, aware UTC (defaults to now)
+        stale_after_seconds: Override for the inactivity threshold
+
+    Returns:
+        str: Reason the record is stale, or None if the sync still looks alive
+    """
+    if not sync_record:
+        return None
+
+    if stale_after_seconds is None:
+        stale_after_seconds = get_stale_timeout_seconds()
+    if now is None:
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+    last_activity = get_sync_last_activity(sync_record)
+    age_seconds = (now - last_activity).total_seconds() if last_activity else None
+
+    pid = sync_record.get('pid')
+    if pid and (age_seconds is None or age_seconds >= _MIN_AGE_BEFORE_PID_CHECK_SECONDS):
+        if pid_is_alive(pid) is False:
+            return f"process {pid} is no longer running"
+
+    if age_seconds is not None and age_seconds > stale_after_seconds:
+        return f"no sync activity for {int(age_seconds // 60)} minutes"
+
+    return None
+
+
+class SyncHeartbeat:
+    """
+    Keeps the sync_history row of a running sync marked as alive.
+
+    Without it a sync that is killed mid-run leaves in_progress = 1 behind with
+    no way to tell it apart from one that is still working.
+    """
+
+    def __init__(self, session_id: str, interval_seconds: int = SYNC_HEARTBEAT_INTERVAL_SECONDS):
+        self.session_id = session_id
+        self.interval_seconds = interval_seconds
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> "SyncHeartbeat":
+        if self._thread is not None:
+            return self
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"sync-heartbeat-{self.session_id}",
+            daemon=True
+        )
+        self._thread.start()
+        return self
+
+    def _run(self) -> None:
+        # Imported lazily so this module stays importable without the database.
+        from ..database import heartbeat_sync_in_db
+
+        while not self._stop_event.wait(self.interval_seconds):
+            try:
+                heartbeat_sync_in_db(self.session_id)
+            except Exception as e:
+                logging.warning(f"Sync heartbeat failed for {self.session_id}: {e}")
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2)
+        self._thread = None
+
+
+def start_sync_heartbeat(
+    session_id: str,
+    interval_seconds: int = SYNC_HEARTBEAT_INTERVAL_SECONDS
+) -> SyncHeartbeat:
+    """Start heartbeating a running sync. Call stop() on the result when done."""
+    return SyncHeartbeat(session_id, interval_seconds).start()

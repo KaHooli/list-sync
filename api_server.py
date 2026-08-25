@@ -3975,7 +3975,47 @@ async def trigger_manual_sync(sync_request: dict = None):
         print(f"Error triggering manual sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def _run_sync_in_subprocess(list_type: str, list_id: str, seerr_url: str, 
+def _close_running_sync_record(status: str, message: str, pid: Optional[int] = None) -> None:
+    """
+    Close out the in-progress sync record after killing the process running it.
+
+    A killed sync never reaches its own end_sync_in_db call, so without this the
+    record stays in_progress and the dashboard keeps reporting a sync that is
+    no longer running.
+
+    Args:
+        status: Final status to record
+        message: Error message explaining what happened
+        pid: Only close the record if it belongs to this process, so a sync
+            running elsewhere is never closed by mistake
+    """
+    try:
+        from list_sync.database import get_current_sync_status, end_sync_in_db
+
+        sync_status = get_current_sync_status(clear_stale=False)
+        if not sync_status or sync_status.get('in_progress') != 1:
+            return
+        if pid is not None and sync_status.get('pid') != pid:
+            logging.info(
+                f"Leaving sync record {sync_status.get('session_id')} alone: "
+                f"it belongs to PID {sync_status.get('pid')}, not {pid}"
+            )
+            return
+
+        end_sync_in_db(
+            session_id=sync_status.get('session_id'),
+            status=status,
+            total_items=sync_status.get('total_items', 0) or 0,
+            items_requested=sync_status.get('items_requested', 0) or 0,
+            items_skipped=sync_status.get('items_skipped', 0) or 0,
+            items_errors=sync_status.get('items_errors', 0) or 0,
+            error_message=message
+        )
+    except Exception as e:
+        logging.warning(f"Could not close sync record after {status}: {e}")
+
+
+def _run_sync_in_subprocess(list_type: str, list_id: str, seerr_url: str,
                             seerr_api_key: str, is_4k: bool, result_queue: multiprocessing.Queue):
     """
     Worker function to run sync in a subprocess.
@@ -4081,6 +4121,11 @@ async def trigger_single_list_sync(target_list: dict, processes: list):
                     if sync_process.is_alive():
                         sync_process.kill()
                     sync_tracker.end_sync()
+                    _close_running_sync_record(
+                        'cancelled',
+                        'Sync cancelled by user',
+                        pid=subprocess_pid
+                    )
                     return {
                         "success": False,
                         "sync_type": "single",
@@ -4098,6 +4143,11 @@ async def trigger_single_list_sync(target_list: dict, processes: list):
                 if sync_process.is_alive():
                     sync_process.kill()
                 sync_tracker.end_sync()
+                _close_running_sync_record(
+                    'failed',
+                    f"Sync timed out after {timeout_seconds} seconds",
+                    pid=subprocess_pid
+                )
                 return {
                     "success": False,
                     "sync_type": "single",
@@ -6645,81 +6695,29 @@ async def get_live_sync_status():
     """Get real-time sync status by checking database"""
     try:
         # Import database function
-        from list_sync.database import get_current_sync_status, end_sync_in_db
-        import psutil
-        from list_sync.utils.sync_status import get_sync_tracker
-        
-        # Get current sync status from database
+        from list_sync.database import get_current_sync_status
+        from list_sync.utils.sync_status import parse_db_timestamp
+
+        # Get current sync status from database. Records left behind by a sync
+        # that died mid-run are closed out by this call, so a crashed sync can
+        # never leave the dashboard stuck on "Sync in Progress".
         sync_status = get_current_sync_status()
-        
+
         if sync_status and sync_status.get('in_progress') == 1:
             # Sync is currently running
             sync_type = sync_status.get('sync_type', 'unknown')
             status = f"running_{sync_type}" if sync_type != 'unknown' else "running"
-            session_id = sync_status.get('session_id')
-            pid = sync_status.get('pid')
 
-            # Detect stale "in progress" records (no running process and tracker says idle)
-            tracker_running = False
-            try:
-                tracker_running = get_sync_tracker().is_sync_running()
-            except Exception:
-                tracker_running = False
-
-            pid_running = False
-            if pid:
-                try:
-                    pid_running = psutil.pid_exists(pid)
-                except Exception:
-                    pid_running = False
-
-            if not pid_running and not tracker_running:
-                # Auto-clear stale state so UI doesn't remain stuck
-                try:
-                    end_sync_in_db(
-                        session_id=session_id,
-                        status='completed',
-                        total_items=sync_status.get('total_items', 0) or 0,
-                        items_requested=sync_status.get('items_requested', 0) or 0,
-                        items_skipped=sync_status.get('items_skipped', 0) or 0,
-                        items_errors=sync_status.get('items_errors', 0) or 0,
-                        error_message="Auto-cleared stale in_progress flag (no running process detected)"
-                    )
-                except Exception as e:
-                    logging.warning(f"Failed to auto-clear stale sync state for {session_id}: {e}")
-
-                return {
-                    "is_running": False,
-                    "status": "idle",
-                    "sync_type": None,
-                    "session_id": None,
-                    "start_time": None,
-                    "duration_seconds": None,
-                    "list_type": None,
-                    "list_id": None,
-                    "pid": None,
-                    "timestamp": datetime.now().isoformat()
-                }
-            
-            # Calculate duration if start time is available
+            # Calculate duration if start time is available. Database timestamps
+            # are UTC, so they are compared against UTC rather than local time.
             duration = None
             start_time_str = sync_status.get('start_time')
-            if start_time_str:
-                try:
-                    # Parse SQLite timestamp format
-                    if isinstance(start_time_str, str):
-                        # Handle different timestamp formats
-                        if 'T' in start_time_str:
-                            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-                        else:
-                            # SQLite format: YYYY-MM-DD HH:MM:SS
-                            start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
-                        duration_seconds = (datetime.now() - start_time).total_seconds()
-                        duration = int(duration_seconds)
-                except Exception as e:
-                    logging.warning(f"Error parsing start_time: {e}")
-                    pass
-            
+            start_time = parse_db_timestamp(start_time_str)
+            if start_time:
+                duration = int((datetime.now(timezone.utc) - start_time).total_seconds())
+            elif start_time_str:
+                logging.warning(f"Could not parse sync start_time: {start_time_str!r}")
+
             return {
                 "is_running": True,
                 "status": status,
