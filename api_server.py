@@ -2557,10 +2557,16 @@ async def save_step2_configuration(data: dict):
         discord_webhook = data.get('discord_webhook', '').strip()
         discord_enabled = data.get('discord_enabled', False)
         
-        if discord_enabled and discord_webhook:
-            if not discord_webhook.startswith('https://discord.com/api/webhooks/'):
-                errors['discord_webhook'] = 'Invalid Discord webhook URL format'
-            # Note: Webhook is tested by the frontend before submission, so we don't need to test again here
+        # Checked whenever a webhook is supplied, not only when notifications are
+        # switched on. The save below stores it either way, and switching Discord
+        # on later is a separate request that carries no URL to check - so a
+        # webhook saved while disabled would never be validated at all.
+        if discord_webhook:
+            from list_sync.utils.settings_validation import validate_discord_webhook
+
+            webhook_error = validate_discord_webhook(discord_webhook)
+            if webhook_error:
+                errors['discord_webhook'] = webhook_error
         
         # If validation failed, return errors
         if errors:
@@ -6939,18 +6945,39 @@ async def update_settings(settings: dict):
     and skipped to preserve existing encrypted values in the database.
     """
     try:
-        from list_sync.config import ConfigManager
-        
+        from list_sync.config import ConfigManager, is_masked_value
+        from list_sync.encryption import should_encrypt
+        from list_sync.utils.settings_validation import validate_settings
+
         config = ConfigManager()
-        
+
         logging.info(f"Saving {len(settings)} settings to database")
-        
+
+        # Several of these settings name something the server later requests, so
+        # they get the same checks the setup wizard applies. Without them this
+        # endpoint is a way to store exactly what the wizard refuses.
+        #
+        # A masked placeholder means "leave this one alone" - save_setting skips
+        # it below, so validating it would reject the mask rather than the value
+        # actually in the database.
+        changing = {
+            key: value for key, value in settings.items()
+            if not (should_encrypt(key) and is_masked_value(str(value)))
+        }
+        errors = validate_settings(changing)
+        if errors:
+            logging.warning(f"Rejected settings update: {errors}")
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "Some settings were rejected", "errors": errors},
+            )
+
         # Save all settings to database
         # The save_setting method will automatically skip masked placeholders
         # for sensitive fields to prevent overwriting real API keys
         for key, value in settings.items():
             config.save_setting(key, value)
-        
+
         # Also update sync_interval table for compatibility
         if 'sync_interval' in settings:
             try:
@@ -6966,6 +6993,9 @@ async def update_settings(settings: dict):
             "message": "Settings saved successfully to database. Changes are active immediately!",
             "settings_updated": len(settings)
         }
+    except HTTPException:
+        # A rejected setting is a deliberate 400, not a server fault.
+        raise
     except Exception as e:
         logging.error(f"Error updating settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -6991,14 +7021,12 @@ async def test_discord_notification(payload: dict = None):
         # The URL arrives from the caller and the server then requests it, so
         # anything other than a real Discord webhook host turns this endpoint
         # into an open request proxy. Discord webhooks only live on Discord.
-        from list_sync.utils.url_safety import validate_outbound_url, DISCORD_WEBHOOK_HOSTS
+        from list_sync.utils.settings_validation import validate_discord_webhook
 
-        allowed, reason = validate_outbound_url(
-            webhook_url, allow_private=False, allowed_hosts=DISCORD_WEBHOOK_HOSTS
-        )
-        if not allowed:
-            logging.warning(f"Blocked Discord webhook test: {reason}")
-            raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {reason}")
+        webhook_error = validate_discord_webhook(webhook_url)
+        if webhook_error:
+            logging.warning(f"Blocked Discord webhook test: {webhook_error}")
+            raise HTTPException(status_code=400, detail=webhook_error)
 
         # Try to use the discord-webhook library if available
         try:

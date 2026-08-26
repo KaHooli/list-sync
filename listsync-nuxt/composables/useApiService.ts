@@ -20,8 +20,20 @@ export function useApiService() {
     let errorCode: string | undefined
     
     if (error?.data?.detail) {
-      // FastAPI error format: { detail: "message" }
-      errorMessage = error.data.detail
+      // FastAPI error format: { detail: "message" }, or a structured detail
+      // such as { message, errors: { field: reason } } from settings validation.
+      // Without flattening, the message shown to the user is '[object Object]'.
+      const detail = error.data.detail
+      if (typeof detail === 'string') {
+        errorMessage = detail
+      } else if (detail?.errors && typeof detail.errors === 'object') {
+        const reasons = Object.entries(detail.errors).map(
+          ([field, reason]) => `${field}: ${reason}`
+        )
+        errorMessage = [detail.message, ...reasons].filter(Boolean).join('\n')
+      } else {
+        errorMessage = detail?.message || JSON.stringify(detail)
+      }
     } else if (error?.data?.error) {
       // Custom error format: { error: "message" }
       errorMessage = error.data.error

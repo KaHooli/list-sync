@@ -162,12 +162,20 @@ def mask_sensitive_value(value: str, show_chars: int = 4) -> str:
     return "*" * (len(value) - show_chars) + value[-show_chars:]
 
 
-# List of sensitive configuration keys that should be encrypted
+# Configuration keys that hold a credential and are encrypted at rest.
+#
+# Every key the settings API can write and the config layer can read belongs
+# here if it is a secret - a key missing from this set is stored as plain text
+# in the database, where anything that can read the data volume can read it.
 SENSITIVE_KEYS = {
     'overseerr_api_key',
+    'seerr_api_key',       # the current name for overseerr_api_key
     'trakt_client_id',
-    'discord_webhook',
+    'discord_webhook',     # the token is part of the webhook URL
     'tmdb_key',
+    'tvdb_key',
+    'simkl_client_id',
+    'simkl_user_token',
 }
 
 

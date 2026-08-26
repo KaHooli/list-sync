@@ -66,19 +66,29 @@ for body, name, want in [
     check(f"discord blocks {name}", r.status_code, want)
 
 print()
-print("=== overseerr connection test ===")
+print("=== seerr connection test ===")
+# The path matters: this used to post to /api/overseerr/test, which does not
+# exist. Every check below passed on the resulting 404 without the guard ever
+# running. Assert the endpoint is real before reading anything into its answers.
+SEERR_TEST = "/api/setup/test/overseerr"
+r = client.post(SEERR_TEST, json={})
+check(f"{SEERR_TEST} exists", r.status_code != 404, True)
+
 for target, name in [
     ("http://169.254.169.254", "metadata"),
     ("file:///etc/passwd", "file scheme"),
     ("gopher://127.0.0.1:11211/", "gopher"),
+    ("http://metadata.google.internal/", "gcp metadata"),
 ]:
-    r = client.post("/api/overseerr/test", json={
+    r = client.post(SEERR_TEST, json={
         "overseerr_url": target, "overseerr_api_key": "k", "overseerr_user_id": "1"
     })
     # endpoint answers 200 with valid:false rather than an HTTP error
     body = r.json() if r.status_code == 200 else {}
     blocked = r.status_code >= 400 or body.get("valid") is False
-    check(f"overseerr test blocks {name}", blocked, True)
+    check(f"seerr test blocks {name}", blocked, True)
+# A private Seerr must still be reachable here; that is checked against the
+# helper at the end of this file, where no outbound request is attempted.
 
 print()
 print("=== a private Seerr must still be permitted ===")

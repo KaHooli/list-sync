@@ -1340,10 +1340,12 @@ def cleanup_old_sync_results(days: int = 30):
     """Clean up sync results older than specified days."""
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
+        # Bound, not interpolated: today every caller passes an int, so the
+        # old .format() was safe by accident rather than by construction.
         cursor.execute('''
-            DELETE FROM synced_items 
-            WHERE last_synced < datetime('now', '-{} days')
-        '''.format(days))
+            DELETE FROM synced_items
+            WHERE last_synced < datetime('now', ?)
+        ''', (f'-{int(days)} days',))
         deleted_count = cursor.rowcount
         conn.commit()
         return deleted_count
@@ -1886,9 +1888,9 @@ def get_expired_cached_images(hours: int = 24) -> List[Dict[str, Any]]:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT * FROM cached_images
-            WHERE last_accessed < datetime('now', '-{} hours')
+            WHERE last_accessed < datetime('now', ?)
             ORDER BY last_accessed ASC
-        '''.format(hours))
+        ''', (f'-{int(hours)} hours',))
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -1910,8 +1912,8 @@ def cleanup_expired_images(hours: int = 24) -> int:
         # Get expired images with their file paths
         cursor.execute('''
             SELECT id, local_path FROM cached_images
-            WHERE last_accessed < datetime('now', '-{} hours')
-        '''.format(hours))
+            WHERE last_accessed < datetime('now', ?)
+        ''', (f'-{int(hours)} hours',))
         expired_images = cursor.fetchall()
         
         deleted_count = 0

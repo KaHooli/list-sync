@@ -77,35 +77,98 @@ def get_seerr_env(name: str, default: Optional[str] = None) -> Optional[str]:
 
     return default
 
+# Marks a config.enc written with a salt and a key derivation function. Files
+# without it predate that and are read with the old scheme below.
+_CONFIG_MAGIC = b"LSCFG1"
+_CONFIG_SALT_BYTES = 16
+_CONFIG_KDF_ROUNDS = 600_000  # OWASP's 2023 floor for PBKDF2-HMAC-SHA256
+
+
+def _legacy_key(password):
+    """
+    Reproduce the original key derivation, for reading existing files.
+
+    The password was padded to 32 bytes and used as the key directly: no salt,
+    no work factor, so a stolen config.enc could be brute-forced at the speed
+    the attacker's hardware could try passwords. New files use _derive_key
+    instead; this exists only so an install written by an older version still
+    opens.
+
+    Args:
+        password (str): The password the file was encrypted with
+
+    Returns:
+        bytes: A Fernet key
+    """
+    return base64.urlsafe_b64encode(password.encode().ljust(32)[:32])
+
+
+def _derive_key(password, salt):
+    """
+    Derive a Fernet key from a password and a salt.
+
+    Args:
+        password (str): The password to derive from
+        salt (bytes): Random salt, stored alongside the ciphertext
+
+    Returns:
+        bytes: A Fernet key
+    """
+    # Imported here rather than at module scope: the test suites stand in a stub
+    # for cryptography that provides Fernet and nothing else.
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=_CONFIG_KDF_ROUNDS,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(password.encode()))
+
+
 def encrypt_config(data, password):
     """
     Encrypt configuration data with a password.
-    
+
     Args:
         data (dict): Configuration data
         password (str): Encryption password
-        
+
     Returns:
-        bytes: Encrypted data
+        bytes: Encrypted data, prefixed with the salt it was derived with
     """
-    key = base64.urlsafe_b64encode(password.encode().ljust(32)[:32])
-    fernet = Fernet(key)
-    return fernet.encrypt(json.dumps(data).encode())
+    salt = os.urandom(_CONFIG_SALT_BYTES)
+    fernet = Fernet(_derive_key(password, salt))
+    return _CONFIG_MAGIC + salt + fernet.encrypt(json.dumps(data).encode())
 
 def decrypt_config(encrypted_data, password):
     """
     Decrypt configuration data with a password.
-    
+
+    Reads both the current format and files written before key derivation was
+    added, so an existing config.enc keeps opening after an upgrade. Such a file
+    is rewritten in the current format the next time it is saved.
+
     Args:
         encrypted_data (bytes): Encrypted configuration data
         password (str): Decryption password
-        
+
     Returns:
         dict: Decrypted configuration data
     """
-    key = base64.urlsafe_b64encode(password.encode().ljust(32)[:32])
+    if encrypted_data.startswith(_CONFIG_MAGIC):
+        offset = len(_CONFIG_MAGIC)
+        salt = encrypted_data[offset:offset + _CONFIG_SALT_BYTES]
+        token = encrypted_data[offset + _CONFIG_SALT_BYTES:]
+        key = _derive_key(password, salt)
+    else:
+        token = encrypted_data
+        key = _legacy_key(password)
+
     fernet = Fernet(key)
-    return json.loads(fernet.decrypt(encrypted_data).decode())
+    return json.loads(fernet.decrypt(token).decode())
 
 def save_config(seerr_url, api_key, requester_user_id):
     """
