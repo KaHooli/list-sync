@@ -53,7 +53,19 @@ def send_to_discord_webhook(summary_text, sync_results, webhook_url: Optional[st
     
     if not webhook_url:
         return  # No webhook configured
-    
+
+    # Last line of defence before the server posts a sync summary to whatever
+    # this URL names. The write paths validate too, but this value can also
+    # arrive from an environment variable or a database edited by hand, and a
+    # webhook pointing at an internal service would make every sync a request
+    # to it - carrying whatever the summary contains.
+    from ..utils.settings_validation import validate_discord_webhook
+
+    webhook_error = validate_discord_webhook(webhook_url)
+    if webhook_error:
+        logging.error(f"Refusing to send Discord notification: {webhook_error}")
+        return
+
     # Double-check if Discord is enabled in config
     try:
         from ..config import ConfigManager
