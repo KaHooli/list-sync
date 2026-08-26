@@ -31,7 +31,7 @@ This comprehensive installation guide covers all deployment methods for ListSync
 - **Git**: For cloning the repository
 
 #### For Manual Installation
-- **Python**: Version 3.9 or higher
+- **Python**: Version 3.12 or higher
 - **Node.js**: Version 18 or higher (for web interface)
 - **Chrome/Chromium**: For Selenium web scraping
 - **Git**: For cloning the repository
@@ -1006,10 +1006,10 @@ docker-compose up -d
 python3 --version
 
 # Install newer Python (Ubuntu)
-sudo apt install python3.9 python3.9-venv
+sudo apt install python3.12 python3.12-venv
 
 # Use specific Python version
-python3.9 -m venv venv
+python3.12 -m venv venv
 ```
 
 **Chrome/Selenium Issues:**

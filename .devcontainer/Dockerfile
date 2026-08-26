@@ -1,4 +1,4 @@
-ARG PYTHON_VERSION=3.9
+ARG PYTHON_VERSION=3.12
 FROM mcr.microsoft.com/devcontainers/python:${PYTHON_VERSION}
 
 USER root
@@ -18,6 +18,6 @@ RUN apt-get -y -qq install \
 
 RUN pip install pipx
 RUN pipx --global ensurepath
-RUN pipx --global install poetry==1.8.3 ruff pre-commit
+RUN pipx --global install poetry==2.3.3 ruff pre-commit
 
 USER vscode

@@ -17,7 +17,7 @@ We welcome contributions to ListSync! This guide will help you get started with 
 
 ### Prerequisites
 
-- **Python 3.9+** with Poetry for dependency management
+- **Python 3.12+** with Poetry for dependency management
 - **Node.js 18+** with npm for frontend development
 - **Docker & Docker Compose** for containerized development
 - **Git** for version control
@@ -309,7 +309,7 @@ def sync_list(
 # pyproject.toml
 [tool.black]
 line-length = 88
-target-version = ['py39']
+target-version = ['py312']
 
 [tool.pylint.messages_control]
 disable = ["C0114", "C0116"]

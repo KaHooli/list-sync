@@ -41,6 +41,8 @@ for DNS.
 | `test_startup` | recovery from a slow Seerr, interactivity detection, clean exit |
 | `test_url_safety` | SSRF validator: schemes, private ranges, metadata, DNS evasion, allowlists |
 | `test_ssrf_endpoints` | the guards rejecting at the HTTP layer, with a sentinel asserting nothing escapes |
+| `test_settings_validation` | settings writes rejecting what the wizard rejects, masked values round-tripping, the Discord sink |
+| `test_config_encryption` | `config.enc` salt and key derivation, and files from before it still opening |
 | `test_image_sniff` | image type detection, cross-checked against `imghdr` where it still exists |
 
 ## Adding one
@@ -52,6 +54,11 @@ passing line — the runner counts those.
 
 ## Python versions
 
-CI runs 3.9 and 3.13. 3.9 is the floor in `pyproject.toml` and what the
+CI runs 3.12 and 3.13. 3.12 is the floor in `pyproject.toml` and what the
 Dockerfile ships; 3.13 is there to catch standard-library removals, which is
 how the `imghdr` breakage in the image proxy surfaced.
+
+Those two jobs report as `Python 3.12` and `Python 3.13`, so their names move
+whenever the matrix does. Branch protection should require the `Tests` job
+instead: it passes only when every leg of the matrix passed, and its name stays
+put across version bumps.

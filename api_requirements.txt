@@ -2,14 +2,12 @@
 #
 # The Dockerfile runs `poetry install` and then `pip install -r` this file, so a
 # pin here overrides the locked version - including downwards. This file used to
-# pin cryptography==41.0.7 and requests==2.31.0, which downgraded the 43.0.3 and
-# 2.32.3 poetry had just installed, putting releases with known advisories into
-# the shipped image. Every entry is a lower bound now, so this step can only
-# move a version forwards.
+# pin cryptography==41.0.7 and requests==2.31.0, which downgraded what poetry had
+# just installed, putting releases with known advisories into the shipped image.
+# Every entry is a lower bound now, so this step can only move a version
+# forwards.
 #
-# Ranges rather than exact pins, matching requirements.txt. The Docker image is
-# built on Python 3.9, where pip resolves the last release of each that still
-# supported it.
+# Ranges rather than exact pins, matching requirements.txt.
 
 # fastapi 0.115.3 is the first release requiring starlette >= 0.40, where the
 # unbounded multipart parsing (CVE-2024-47874) was fixed.
@@ -24,10 +22,4 @@ psutil>=5.9.0
 python-dotenv>=1.0.0
 requests>=2.32.4
 halo>=0.0.31
-
-# Held at the locked version rather than raised: every cryptography from 44.0.0
-# on declares Requires-Python !=3.9.0,!=3.9.1, and pyproject.toml supports 3.9,
-# so a higher floor here makes the declared minimum Python unresolvable. Moving
-# past 43.x belongs in pyproject.toml and poetry.lock together, where the
-# supported Python range is decided.
-cryptography>=43.0.3
+cryptography>=44.0.1

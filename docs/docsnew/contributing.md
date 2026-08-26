@@ -21,7 +21,7 @@ This comprehensive guide covers how to contribute to ListSync, including develop
 Before contributing to ListSync, ensure you have:
 
 - **Git** for version control
-- **Python 3.9+** for backend development
+- **Python 3.12+** for backend development
 - **Node.js 18+** for frontend development
 - **Docker & Docker Compose** for containerized development
 - **Chrome/Chromium** for Selenium testing

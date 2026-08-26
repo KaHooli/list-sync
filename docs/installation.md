@@ -583,7 +583,7 @@ docker-compose ps
 python3 --version
 
 # Install newer Python (Ubuntu)
-sudo apt install python3.9
+sudo apt install python3.12
 ```
 
 **Chrome/Selenium issues**:

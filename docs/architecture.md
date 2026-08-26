@@ -234,7 +234,7 @@ The application is containerized using a multi-stage Dockerfile:
 3. **Runtime Image** - Final production image
 
 **Runtime Environment:**
-- Python 3.9+ with virtual environment
+- Python 3.12+ with virtual environment
 - Node.js 18+ for frontend serving
 - Chrome browser with WebDriver
 - Supervisor for process management

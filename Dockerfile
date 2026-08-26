@@ -2,7 +2,7 @@
 # Includes: ListSync Core Service + FastAPI Backend + Nuxt 3 Frontend 
 
 # Use specific Python version
-ARG PYTHON_VERSION=3.9
+ARG PYTHON_VERSION=3.12
 ARG NODE_VERSION=20
 
 # Stage 1: Python Builder (ListSync + API)
@@ -17,8 +17,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install poetry==1.8.3
+# Install Poetry. 2.x rather than 1.8: poetry.lock is lock-version 2.1 now,
+# which 1.8 refuses to read.
+RUN pip install poetry==2.3.3
 
 # Copy Poetry configuration
 COPY pyproject.toml poetry.lock ./

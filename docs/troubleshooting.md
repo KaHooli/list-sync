@@ -800,7 +800,7 @@ flowchart TD
    python3 --version  # Should be 3.8+
    
    # Install newer Python if needed
-   sudo apt install python3.9 python3.9-venv
+   sudo apt install python3.12 python3.12-venv
    ```
 
 2. **Virtual environment issues**:
