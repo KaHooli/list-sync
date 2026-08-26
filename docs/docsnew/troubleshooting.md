@@ -1158,13 +1158,13 @@ sudo setenforce 0
 
 **1. Check Python Version**
 ```bash
-python3 --version  # Should be 3.9+
+python3 --version  # Should be 3.12+
 
 # Install newer Python (Ubuntu)
-sudo apt install python3.9 python3.9-venv
+sudo apt install python3.12 python3.12-venv
 
 # Use specific Python version
-python3.9 -m venv venv
+python3.12 -m venv venv
 ```
 
 **2. Virtual Environment Issues**

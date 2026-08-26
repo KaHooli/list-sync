@@ -18,7 +18,7 @@ ListSync is a sophisticated automation tool that bridges your watchlists from va
 
 ### Technology Stack
 
-- **Python 3.9+**: Core language with modern async/await patterns
+- **Python 3.12+**: Core language with modern async/await patterns
 - **SeleniumBase**: Web scraping framework with undetected Chrome for bypassing bot detection
 - **SQLite**: Lightweight database for local data persistence
 - **Requests**: HTTP library for API communications

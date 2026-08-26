@@ -121,7 +121,7 @@ For those wanting to contribute or extend ListSync:
 4. **[Configuration Guide - Advanced](configuration.md)** - Advanced configuration options
 
 **Tech Stack:**
-- **Backend**: Python 3.9+, FastAPI, SeleniumBase
+- **Backend**: Python 3.12+, FastAPI, SeleniumBase
 - **Frontend**: Nuxt 3, Vue 3, TypeScript, Tailwind CSS
 - **Database**: SQLite with auto-migrations
 - **Deployment**: Docker, Docker Compose

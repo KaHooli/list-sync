@@ -2,7 +2,7 @@
 # Contains only the core Python synchronization application 
 # Excludes: FastAPI backend, Next.js frontend, Node.js dependencies
 
-ARG PYTHON_VERSION=3.9
+ARG PYTHON_VERSION=3.12
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
 
@@ -105,8 +105,9 @@ ENV TZ=GMT \
 # Set working directory
 WORKDIR /usr/src/app
 
-# Install Poetry
-RUN pip install poetry==1.8.3
+# Install Poetry. 2.x rather than 1.8: poetry.lock is lock-version 2.1 now,
+# which 1.8 refuses to read.
+RUN pip install poetry==2.3.3
 
 # Copy Poetry configuration
 COPY pyproject.toml poetry.lock ./

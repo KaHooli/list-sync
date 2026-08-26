@@ -134,7 +134,7 @@ docker-compose -f docker-compose.core.yml logs -f
 <summary>🍿 <strong>Option 3: Running ListSync Locally (Without Docker)</strong></summary>
 
 ### **Prerequisites**
-- Python 3.9+, Node.js 18+, Chrome/Chromium, Git
+- Python 3.12+, Node.js 18+, Chrome/Chromium, Git
 
 ### **Setup**
 

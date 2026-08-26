@@ -17,17 +17,16 @@ concurrency:
 jobs:
   test:
     name: Python ${{ matrix.python-version }}
-    # Pinned rather than ubuntu-latest: setup-python has no 3.9 build for
-    # ubuntu-26.04, so this job would start failing the day ubuntu-latest
-    # moves on. Revisit when the project drops 3.9.
-    runs-on: ubuntu-24.04
+    # The 3.9 pin that kept this on ubuntu-24.04 is gone with the floor, so this
+    # follows ubuntu-latest again.
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # 3.9 is what the Dockerfile ships and the floor in pyproject.toml.
+        # 3.12 is what the Dockerfile ships and the floor in pyproject.toml.
         # 3.13 catches standard-library removals before a release does - it is
         # how the imghdr breakage in the image proxy was found.
-        python-version: ["3.9", "3.13"]
+        python-version: ["3.12", "3.13"]
 
     steps:
       - name: Checkout
@@ -46,8 +45,8 @@ jobs:
           pip install -r tests/requirements.txt
 
       - name: Show resolved versions
-        # On 3.9 pip picks older releases of fastapi and friends, so recording
-        # what was actually installed makes a version-specific failure legible.
+        # tests/requirements.txt is unpinned, so recording what was actually
+        # installed makes a version-specific failure legible.
         run: pip list
 
       - name: Run test suites
