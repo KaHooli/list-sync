@@ -52,6 +52,28 @@ jobs:
       - name: Run test suites
         run: python tests/run_all.py
 
+  # The check branch protection should require, rather than the matrix jobs
+  # themselves. Those are named after the Python version they run, so every
+  # version bump renames them and silently invalidates the required-check list:
+  # the old name can never report again, and a fully green pull request blocks
+  # forever on a check that no longer exists. That is exactly what the 3.9 ->
+  # 3.12 bump did. This name does not move when the matrix does.
+  tests-passed:
+    name: Tests
+    needs: test
+    # always(), so a failed, cancelled or skipped matrix still reports a result
+    # here. A required check that is skipped never reports at all, which blocks
+    # a pull request the same way a renamed one does.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every matrix leg to have passed
+        # needs.test.result is the aggregate over the whole matrix: 'success'
+        # only when every leg succeeded.
+        run: |
+          echo "test matrix result: ${{ needs.test.result }}"
+          [ "${{ needs.test.result }}" = "success" ]
+
   lint:
     name: Ruff
     runs-on: ubuntu-latest

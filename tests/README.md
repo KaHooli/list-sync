@@ -57,3 +57,8 @@ passing line — the runner counts those.
 CI runs 3.12 and 3.13. 3.12 is the floor in `pyproject.toml` and what the
 Dockerfile ships; 3.13 is there to catch standard-library removals, which is
 how the `imghdr` breakage in the image proxy surfaced.
+
+Those two jobs report as `Python 3.12` and `Python 3.13`, so their names move
+whenever the matrix does. Branch protection should require the `Tests` job
+instead: it passes only when every leg of the matrix passed, and its name stays
+put across version bumps.
