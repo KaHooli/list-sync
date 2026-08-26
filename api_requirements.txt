@@ -22,6 +22,12 @@ psutil>=5.9.0
 # still installs everything api_server.py imports. Floors only - poetry.lock
 # decides the version in the image.
 python-dotenv>=1.0.0
-cryptography>=44.0.1
 requests>=2.32.4
 halo>=0.0.31
+
+# Held at the locked version rather than raised: every cryptography from 44.0.0
+# on declares Requires-Python !=3.9.0,!=3.9.1, and pyproject.toml supports 3.9,
+# so a higher floor here makes the declared minimum Python unresolvable. Moving
+# past 43.x belongs in pyproject.toml and poetry.lock together, where the
+# supported Python range is decided.
+cryptography>=43.0.3
