@@ -369,6 +369,102 @@ check("env change reassigns the format",
       db.get_list_book_format("goodreads", "19281606:to-read"), "ebook")
 check("still no duplicates", len(db.load_list_ids()), before)
 
+# --- end to end: a shelf's format reaches the request it produces ----------
+import list_sync.main as main
+import list_sync.providers as providers
+
+db.save_list_id("55:sci-fi", "goodreads", user_id="3", book_format="audiobook")
+
+# A fake provider stands in for the shelf, so the wiring is what's under test
+# rather than Goodreads' feed.
+providers.PROVIDERS["goodreads"] = lambda list_id: [
+    {"title": "Dune", "media_type": "book", "year": 1965, "author": "Frank Herbert",
+     "isbn": "0441478123"},
+]
+
+book_lists = [l for l in db.load_list_ids() if l["type"] == "goodreads" and l["id"] == "55:sci-fi"]
+items, synced = main.fetch_media_from_lists(book_lists)
+check("shelf fetched one book", len(items), 1)
+check("format rides along with the item", items[0]["_source_list_book_format"], "audiobook")
+check("synced list carries its format", synced[0]["book_format"], "audiobook")
+
+sources = main.get_source_lists_from_item(items[0])
+check("source list keeps the format", sources[0]["book_format"], "audiobook")
+check("source list keeps the user", sources[0]["user_id"], "3")
+
+
+class FakeSeerr:
+    """Records what a sync would ask Seerr for, without asking it."""
+    requester_user_id = "1"
+    book_state_from_media_info = staticmethod(SeerrClient.book_state_from_media_info)
+
+    def __init__(self, book_id="OL45883W", **books):
+        self.books = {"supported": True, "ebook": True, "audiobook": True,
+                      "known": True, "reason": "ok", **books}
+        self.book_id = book_id
+        self.requested = []
+
+    def get_capabilities(self, refresh=False):
+        return {"books": self.books}
+
+    def get_book(self, book_id):
+        return None
+
+    def search_book(self, title, author=None, year=None, isbn=None):
+        return {"id": self.book_id, "title": title, "author": author, "author_id": "OL79034A",
+                "isbn13": "9780441478125", "edition_id": "OL8934157M", "media_info": {}}
+
+    def request_book(self, book_id, book_format="ebook", **kwargs):
+        self.requested.append((book_id, book_format, kwargs.get("requester_user_id")))
+        return "success"
+
+
+# A book synced inside the skip window is left alone - OL27448W was written by
+# the database checks above.
+seerr = FakeSeerr(book_id="OL27448W")
+check("recently synced book is skipped",
+      main.process_media_item(items[0], seerr, dry_run=False)["status"], "skipped")
+check("skipped book is not requested", seerr.requested, [])
+
+seerr = FakeSeerr()
+result = main.process_media_item(items[0], seerr, dry_run=False)
+check("book routed to the book path", result["media_type"], "book")
+check("book requested", result["status"], "requested")
+check("requested as the shelf's user, in its format", seerr.requested,
+      [("OL45883W", "audiobook", "3")])
+
+# The same book on two shelves is one request per (user, format).
+two_shelves = dict(items[0])
+two_shelves["_source_lists"] = [
+    {"type": "goodreads", "id": "55:sci-fi", "user_id": "3", "book_format": "audiobook"},
+    {"type": "goodreads", "id": "19281606:to-read", "user_id": "7", "book_format": "ebook"},
+]
+# Each scenario needs its own book: a book synced by the previous one is
+# inside the skip window and would be left alone.
+seerr = FakeSeerr(book_id="OL10001W")
+main.process_media_item(two_shelves, seerr, dry_run=False)
+check("one request per user and format", seerr.requested,
+      [("OL10001W", "audiobook", "3"), ("OL10001W", "ebook", "7")])
+
+# A request just made is remembered, so the second shelf wanting the same
+# format doesn't earn a 409 from Seerr.
+same_format = dict(items[0])
+same_format["_source_lists"] = [
+    {"type": "goodreads", "id": "a", "user_id": "3", "book_format": "ebook"},
+    {"type": "goodreads", "id": "b", "user_id": "7", "book_format": "ebook"},
+]
+seerr = FakeSeerr(book_id="OL10002W")
+main.process_media_item(same_format, seerr, dry_run=False)
+check("overlapping format requested once", seerr.requested,
+      [("OL10002W", "ebook", "3")])
+
+# Without book support the item errors out rather than being requested.
+seerr = FakeSeerr(book_id="OL10003W", supported=False, ebook=False, audiobook=False,
+                  reason="This Seerr server has no book support.")
+result = main.process_media_item(items[0], seerr, dry_run=False)
+check("no book support is an error", result["status"], "error")
+check("nothing requested", seerr.requested, [])
+
 print()
 if fail:
     print(f"{len(fail)} check(s) failed: {', '.join(fail)}")
