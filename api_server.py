@@ -3146,6 +3146,22 @@ def _seerr_capabilities(refresh: bool = False) -> Dict[str, Any]:
     return capabilities
 
 
+def _book_format_available(books: Dict[str, Any], book_format: str) -> bool:
+    """
+    Whether the server has a default Bookshelf service for a book format.
+
+    Args:
+        books (Dict[str, Any]): The "books" half of a capabilities answer
+        book_format (str): "ebook", "audiobook" or "both"
+
+    Returns:
+        bool: True when Seerr could serve a request in that format
+    """
+    if book_format == "both":
+        return bool(books["ebook"] and books["audiobook"])
+    return bool(books.get(book_format))
+
+
 @app.get("/api/system/capabilities")
 async def get_system_capabilities(refresh: bool = Query(False)):
     """
@@ -3387,12 +3403,7 @@ async def update_list_book_format_endpoint(list_type: str, list_id: str, payload
             )
 
         books = _seerr_capabilities()["books"]
-        available = {
-            "ebook": books["ebook"],
-            "audiobook": books["audiobook"],
-            "both": books["ebook"] and books["audiobook"],
-        }
-        if not available[requested]:
+        if books["known"] and not _book_format_available(books, requested):
             raise HTTPException(status_code=400, detail=books["reason"])
 
         if not update_list_book_format(list_type, list_id, requested):
@@ -3433,24 +3444,20 @@ async def add_list(list_add: ListAdd):
             raise HTTPException(status_code=400, detail=validation_error)
 
         # A book list is only worth storing if the connected Seerr can request
-        # books - otherwise every sync of it would fail, item by item.
+        # books - otherwise every sync of it would fail, item by item. Only a
+        # server that answered "no books" refuses one, though: an inconclusive
+        # probe (Seerr unreachable, a key without admin) is not evidence, and
+        # refusing on it would block a list that syncs perfectly well.
         if is_book_provider(list_type):
             books = _seerr_capabilities()["books"]
-            if not books["supported"]:
+            if books["known"] and not books["supported"]:
                 raise HTTPException(status_code=400, detail=books["reason"])
 
             book_format = normalize_book_format(list_add.book_format, DEFAULT_BOOK_FORMAT)
-            available = {
-                "ebook": books["ebook"],
-                "audiobook": books["audiobook"],
-                "both": books["ebook"] and books["audiobook"],
-            }
-            if not available[book_format]:
+            if books["known"] and not _book_format_available(books, book_format):
                 raise HTTPException(
                     status_code=400,
-                    detail=(
-                        f"Seerr cannot request {book_format} - {books['reason']}"
-                    )
+                    detail=f"Seerr cannot request {book_format} - {books['reason']}"
                 )
 
         # Auto-detect special Trakt lists (trending:movies, popular:shows, etc.)

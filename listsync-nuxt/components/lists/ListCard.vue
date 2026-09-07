@@ -446,9 +446,9 @@ const sources = [
     label: 'Goodreads', 
     value: 'goodreads', 
     icon: BookIcon, 
-    color: 'text-orange-400',
-    bgColor: 'bg-orange-500/20',
-    borderColor: 'border-orange-500/40',
+    color: 'text-goodreads-cream',
+    bgColor: 'bg-goodreads-brown/30',
+    borderColor: 'border-goodreads-tan/50',
     description: 'Book shelves'
   },
   { 

@@ -28,6 +28,14 @@ export default {
           900: '#581c87',
           950: '#3b0764',
         },
+        // Goodreads' own palette: a dark brown wordmark on cream. On this dark
+        // UI the brown becomes the tint behind the icon and the cream the
+        // foreground, since the brown alone would be unreadable.
+        goodreads: {
+          cream: '#e0d3bd',
+          tan: '#a37a55',
+          brown: '#75412e',
+        },
       },
       fontFamily: {
         sans: ['"Titillium Web"', 'sans-serif'],

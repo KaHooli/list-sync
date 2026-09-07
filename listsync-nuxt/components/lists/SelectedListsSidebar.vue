@@ -361,7 +361,7 @@ const sourceConfig: Record<string, { icon: any; color: string; bg: string; label
   tmdb: { icon: GlobeIcon, color: 'text-cyan-400', bg: 'bg-cyan-500/20', label: 'TMDB' },
   tvdb: { icon: CalendarIcon, color: 'text-indigo-400', bg: 'bg-indigo-500/20', label: 'TVDB' },
   anilist: { icon: SparklesIcon, color: 'text-amber-400', bg: 'bg-amber-500/20', label: 'AniList' },
-  goodreads: { icon: BookIcon, color: 'text-orange-400', bg: 'bg-orange-500/20', label: 'Goodreads' },
+  goodreads: { icon: BookIcon, color: 'text-goodreads-cream', bg: 'bg-goodreads-brown/30', label: 'Goodreads' },
   openlibrary: { icon: LibraryIcon, color: 'text-teal-400', bg: 'bg-teal-500/20', label: 'Open Library' },
 }
 
