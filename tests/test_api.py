@@ -145,6 +145,23 @@ r = client.post("/api/lists", json={"list_type": "openlibrary", "list_id": "jane
                                     "user_id": "7"})
 check("default format applied", r.json()["book_format"], "ebook")
 
+# An inconclusive probe - Seerr unreachable, or a key without admin - is not
+# evidence that books are unsupported, so it must not block the list. Refusing
+# on it would hide a provider that works perfectly well.
+with_book_support(supported=False, ebook=False, audiobook=False, known=False,
+                  reason="Could not reach Seerr to check for book support.")
+r = client.post("/api/lists", json={"list_type": "goodreads", "list_id": "77:to-read",
+                                    "user_id": "7", "book_format": "audiobook"})
+check("unknown support does not block the list", r.status_code, 200)
+check("requested format kept", r.json()["book_format"], "audiobook")
+
+r = client.patch("/api/lists/goodreads/77:to-read/book-format", json={"book_format": "both"})
+check("unknown support does not block a format change", r.status_code, 200)
+
+caps = client.get("/api/system/capabilities").json()
+check("unknown support reports no confirmed formats", caps["books"]["formats"], [])
+check("unknown support is flagged as unsettled", caps["books"]["known"], False)
+
 print()
 print("FAILED:", fail if fail else "none")
 sys.exit(1 if fail else 0)

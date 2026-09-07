@@ -748,15 +748,10 @@ class SeerrClient:
             }
 
         if response.status_code in (404, 405):
-            return {
-                **no_books,
-                "known": True,
-                "reason": (
-                    "This Seerr server has no book support. Book lists need a build that "
-                    "can request books, such as SeerrNG with a Chaptarr/Readarr-compatible "
-                    "Bookshelf service."
-                ),
-            }
+            # The Bookshelf *settings* route is newer than book support itself,
+            # so its absence is not proof: ask the book endpoint directly
+            # before concluding this server cannot do books at all.
+            return self._probe_book_endpoint()
 
         if response.status_code in (401, 403):
             return {
@@ -823,6 +818,68 @@ class SeerrClient:
             "audiobook": has_audiobook,
             "known": True,
             "reason": reason,
+        }
+
+    def _probe_book_endpoint(self) -> Dict[str, Any]:
+        """
+        Fall back to the book endpoint when the Bookshelf settings are absent.
+
+        /book/search is the book feature itself rather than a setting for it,
+        and needs only an authenticated caller, so it answers the one question
+        that matters - can this server do books at all - on builds where the
+        settings route is missing or has moved.
+
+        Returns:
+            Dict[str, Any]: The same shape as _probe_book_support()
+        """
+        no_books = {"supported": False, "ebook": False, "audiobook": False}
+        url = f"{self.seerr_url}/api/v1/book/search"
+
+        try:
+            response = requests.get(
+                url, headers=self.headers, params={"query": "test", "page": 1}, timeout=20
+            )
+        except requests.exceptions.RequestException as e:
+            return {
+                **no_books,
+                "known": False,
+                "reason": f"Could not reach {self.seerr_url} to check for book support: {e}",
+            }
+
+        if response.status_code in (404, 405):
+            return {
+                **no_books,
+                "known": True,
+                "reason": (
+                    "This Seerr server has no book support. Book lists need a build that "
+                    "can request books, such as SeerrNG with a Chaptarr/Readarr-compatible "
+                    "Bookshelf service."
+                ),
+            }
+
+        if response.status_code >= 400:
+            return {
+                **no_books,
+                "known": False,
+                "reason": (
+                    f"Could not tell whether this server supports books: the Bookshelf "
+                    f"settings are unavailable and /book/search answered "
+                    f"HTTP {response.status_code}."
+                ),
+            }
+
+        # Books work, but without the Bookshelf settings there is no way to say
+        # which formats have a default service. Left unsettled on purpose, so
+        # neither format is refused on a guess.
+        return {
+            "supported": True,
+            "ebook": True,
+            "audiobook": True,
+            "known": False,
+            "reason": (
+                "This server can request books, but its Bookshelf settings could not be "
+                "read, so which formats have a default service is unverified."
+            ),
         }
 
     def get_book(self, book_id: str) -> Optional[Dict[str, Any]]:

@@ -87,6 +87,34 @@
                 </span>
               </button>
             </div>
+
+            <!-- Book providers are only usable against a Seerr that can
+                 request books, so when they are missing, say why rather than
+                 leaving a silent gap where Goodreads used to be -->
+            <div
+              v-if="bookSupportChecked && (bookProvidersHidden || bookSupportUnknown)"
+              class="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20"
+            >
+              <component :is="InfoIcon" :size="14" class="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div class="flex-1 text-[11px] text-muted-foreground leading-relaxed">
+                <span v-if="bookProvidersHidden">
+                  Goodreads and Open Library are hidden because this Seerr server cannot request books.
+                </span>
+                <span v-else>
+                  Could not confirm whether this Seerr server can request books, so the book
+                  providers are shown anyway.
+                </span>
+                <span v-if="bookSupport?.reason" class="block mt-0.5 opacity-80">{{ bookSupport.reason }}</span>
+                <button
+                  type="button"
+                  class="mt-1 text-purple-400 hover:text-purple-300 font-medium disabled:opacity-50"
+                  :disabled="recheckingBookSupport"
+                  @click="recheckBookSupport"
+                >
+                  {{ recheckingBookSupport ? 'Checking…' : 'Check again' }}
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Step 2: Select List -->
@@ -591,10 +619,13 @@ const userManuallySelected = ref(false)
 const overseerrUrl = ref('')
 
 // Books can only be requested by a Seerr build that supports them (SeerrNG,
-// through a Chaptarr/Readarr-compatible Bookshelf service). Until the server
-// says it can, the book providers stay out of the picker entirely.
+// through a Chaptarr/Readarr-compatible Bookshelf service). A server that says
+// it cannot hides the book providers; anything less certain leaves them in
+// place with the reason shown.
 const bookSupport = ref<SystemCapabilities['books'] | null>(null)
 const selectedBookFormat = ref<BookFormat>('ebook')
+const recheckingBookSupport = ref(false)
+const bookSupportChecked = ref(false)
 
 // Collapsed categories state
 const collapsedCategories = ref<Record<string, boolean>>({})
@@ -630,11 +661,15 @@ watch(() => props.modelValue, async (newValue, oldValue) => {
     try {
       const [config, capabilities] = await Promise.all([
         api.getConfig(),
-        api.getCapabilities().catch(() => null),
+        api.getCapabilities().catch((err: any) => {
+          console.error('Could not read Seerr capabilities:', err)
+          return null
+        }),
         usersStore.fetchUsers()
       ])
 
       bookSupport.value = capabilities?.books ?? null
+      bookSupportChecked.value = true
       selectedBookFormat.value = defaultBookFormat()
       
       // Store Seerr URL for avatar images
@@ -655,6 +690,7 @@ watch(() => props.modelValue, async (newValue, oldValue) => {
         }
       }
     } catch (error) {
+      bookSupportChecked.value = true
       console.error('Failed to load default user:', error)
       if (!userManuallySelected.value) {
         selectedUserId.value = '1'
@@ -684,10 +720,10 @@ const movieAndTvSources = [
   { label: 'AniList', value: 'anilist', icon: SparklesIcon, color: 'text-amber-400', bgColor: 'bg-amber-500/20', borderColor: 'border-amber-500/40' },
 ]
 
-// Book sources. Seerr only requests books on builds that support them, so
-// these appear once the server has said it can.
+// Book sources, hidden only when the connected Seerr has said outright that it
+// cannot request books.
 const bookSources = [
-  { label: 'Goodreads', value: 'goodreads', icon: BookIcon, color: 'text-orange-400', bgColor: 'bg-orange-500/20', borderColor: 'border-orange-500/40' },
+  { label: 'Goodreads', value: 'goodreads', icon: BookIcon, color: 'text-goodreads-cream', bgColor: 'bg-goodreads-brown/30', borderColor: 'border-goodreads-tan/50' },
   { label: 'Open Library', value: 'openlibrary', icon: LibraryIcon, color: 'text-teal-400', bgColor: 'bg-teal-500/20', borderColor: 'border-teal-500/40' },
 ]
 
@@ -695,9 +731,38 @@ const bookSources = [
 // already exist even when the server can no longer request them.
 const sources = [...movieAndTvSources, ...bookSources]
 
-const availableSources = computed(() =>
-  bookSupport.value?.supported ? sources : movieAndTvSources
+const bookSupportSettled = computed(() => bookSupport.value?.known ?? false)
+
+// Only a server that has answered "no books" hides them. While the answer is
+// unknown the providers stay, with the reason shown underneath, so a failed
+// probe reads as a failed probe rather than as a missing feature.
+const bookProvidersHidden = computed(
+  () => bookSupportSettled.value && !bookSupport.value?.supported
 )
+
+const availableSources = computed(() =>
+  bookProvidersHidden.value ? movieAndTvSources : sources
+)
+
+// Null covers the capabilities endpoint itself being unreachable, which is
+// just as inconclusive as the probe coming back unsure.
+const bookSupportUnknown = computed(() => !bookSupport.value || !bookSupport.value.known)
+
+const recheckBookSupport = async () => {
+  recheckingBookSupport.value = true
+  try {
+    // Skip the server's short-lived cache: someone clicking this has usually
+    // just fixed whatever the last answer was complaining about.
+    const capabilities = await api.getCapabilities(true)
+    bookSupport.value = capabilities?.books ?? null
+    bookSupportChecked.value = true
+    selectedBookFormat.value = defaultBookFormat()
+  } catch (err: any) {
+    showError('Check failed', err?.message || 'Could not ask Seerr about book support')
+  } finally {
+    recheckingBookSupport.value = false
+  }
+}
 
 const isBookSource = computed(() => bookSources.some(s => s.value === selectedSource.value))
 
@@ -715,7 +780,11 @@ const bookFormatLabel = (format: BookFormat) =>
   ({ ebook: 'eBooks', audiobook: 'Audiobooks', both: 'Audiobooks + eBooks' })[format] || format
 
 const bookFormatOptions = computed(() => {
-  const available = bookSupport.value?.formats ?? []
+  // With no settled answer we cannot rule any format out, so offer all three
+  // rather than leaving the toggle empty and the choice unavailable.
+  const available = bookSupport.value?.known
+    ? (bookSupport.value.formats ?? [])
+    : (['audiobook', 'both', 'ebook'] as BookFormat[])
   return [
     { label: 'Audiobooks', value: 'audiobook' as BookFormat, icon: HeadphonesIcon },
     { label: 'Both', value: 'both' as BookFormat, icon: LibraryIcon },
@@ -1494,6 +1563,7 @@ const handleClose = () => {
     listsToAdd.value = []
     presetSearch.value = ''
     selectedBookFormat.value = defaultBookFormat()
+    bookSupportChecked.value = false
     showMobileSidebar.value = false
   }, 300)
 }

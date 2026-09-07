@@ -3,7 +3,7 @@
  * Uses relative URLs to work with Nitro proxy in Docker
  */
 
-import type { FailedItemsResponse, FailedItem } from '~/types'
+import type { FailedItemsResponse, FailedItem, SystemCapabilities } from '~/types'
 
 export function useApiService() {
   // Use relative URLs - Nitro proxy will handle routing
@@ -112,6 +112,13 @@ export function useApiService() {
       return apiCall(`${baseURL}/lists/${listType}/${encodeURIComponent(listId)}/user`, {
         method: 'PATCH',
         body: { user_id: userId },
+      })
+    },
+
+    async updateListBookFormat(listType: string, listId: string, bookFormat: string) {
+      return apiCall(`${baseURL}/lists/${listType}/${encodeURIComponent(listId)}/book-format`, {
+        method: 'PATCH',
+        body: { book_format: bookFormat },
       })
     },
 
@@ -296,6 +303,14 @@ export function useApiService() {
 
     async getSystemStatus() {
       return apiCall(`${baseURL}/system/status`)
+    },
+
+    /**
+     * Which media types the connected Seerr can request. Book lists are only
+     * offered when this reports book support.
+     */
+    async getCapabilities(refresh = false): Promise<SystemCapabilities> {
+      return apiCall<SystemCapabilities>(`${baseURL}/system/capabilities${refresh ? '?refresh=true' : ''}`)
     },
 
     async getProcesses() {

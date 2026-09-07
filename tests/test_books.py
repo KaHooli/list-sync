@@ -156,6 +156,36 @@ rq.get = lambda *a, **k: Response(status_code=403)
 books = client.get_capabilities(refresh=True)["books"]
 check("rejected key is not a verdict", (books["supported"], books["known"]), (False, False))
 
+# The Bookshelf settings route is newer than book support itself. When it is
+# missing, the book endpoint - not the absent setting - decides the verdict.
+def probe(settings_status, book_status):
+    """Answer the settings probe and the /book/search fallback separately."""
+    def get(url, *a, **k):
+        if "/settings/readarr" in url:
+            return Response(status_code=settings_status)
+        if "/book/search" in url:
+            return Response({"results": []} if book_status == 200 else None,
+                            status_code=book_status)
+        raise AssertionError(f"unexpected probe URL: {url}")
+    return get
+
+rq.get = probe(404, 200)
+books = client.get_capabilities(refresh=True)["books"]
+check("books found despite missing settings route",
+      (books["supported"], books["known"]), (True, False))
+check("formats left unverified rather than guessed",
+      (books["ebook"], books["audiobook"]), (True, True))
+
+rq.get = probe(404, 404)
+books = client.get_capabilities(refresh=True)["books"]
+check("no settings route and no book endpoint is a real no",
+      (books["supported"], books["known"]), (False, True))
+
+rq.get = probe(404, 500)
+books = client.get_capabilities(refresh=True)["books"]
+check("a broken book endpoint settles nothing",
+      (books["supported"], books["known"]), (False, False))
+
 def unreachable(*a, **k):
     raise rq.exceptions.ConnectionError("no route to host")
 
