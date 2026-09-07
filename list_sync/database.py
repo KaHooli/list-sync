@@ -9,6 +9,7 @@ import hashlib
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
+from .books import DEFAULT_BOOK_FORMAT, is_book_provider, normalize_book_format
 from .utils.logger import DATA_DIR
 
 # Define database file path
@@ -50,6 +51,32 @@ def normalize_list_id(list_type: str, list_id: str) -> str:
         chart_match = re.search(r'/chart/([a-z0-9_-]+)', lowered)
         if chart_match:
             return chart_match.group(1)
+        return lowered
+
+    # Book lists name a person and a shelf, which the URL forms spell out at
+    # length; reduce both forms to "user:shelf" (or "user/list").
+    if (list_type or "").lower() == "goodreads":
+        import re
+        match = re.search(r'/(?:review/list(?:_rss)?|user/show)/(\d+)', lowered)
+        if match:
+            shelf_match = re.search(r'[?&]shelf=([^&]+)', lowered)
+            shelf = shelf_match.group(1) if shelf_match else "to-read"
+            return f"{match.group(1)}:{shelf}"
+        user, sep, shelf = key.partition(':')
+        user_match = re.match(r'\d+', user.strip())
+        if user_match:
+            return f"{user_match.group(0)}:{(shelf.strip() if sep else '') or 'to-read'}"
+        return lowered
+
+    if (list_type or "").lower() == "openlibrary":
+        import re
+        match = re.search(r'/people/([^/]+)/(lists|books)/([^/?]+)', lowered)
+        if match:
+            user, section, value = match.groups()
+            return f"{user}/{value.upper()}" if section == "lists" else f"{user}:{value}"
+        if re.fullmatch(r'[^/:]+/ol\d+l', lowered):
+            user, _, value = lowered.partition('/')
+            return f"{user}/{value.upper()}"
         return lowered
 
     # Everything else: compare on the URL minus scheme/host boilerplate.
@@ -337,6 +364,15 @@ def init_database():
         except sqlite3.OperationalError:
             pass
 
+        # Books are identified by an Open Library work ID rather than a numeric
+        # TMDB/Seerr ID, so they need a column of their own to be matched back
+        # to an existing row on the next sync.
+        try:
+            cursor.execute('ALTER TABLE synced_items ADD COLUMN external_id TEXT')
+            logging.info("Added external_id column to synced_items table")
+        except sqlite3.OperationalError:
+            pass
+
         # Add poster columns to lists if they don't exist
         try:
             cursor.execute('ALTER TABLE lists ADD COLUMN poster_url TEXT')
@@ -354,6 +390,14 @@ def init_database():
         try:
             cursor.execute("ALTER TABLE lists ADD COLUMN user_id TEXT DEFAULT '1'")
             logging.info("Added user_id column to lists table")
+        except sqlite3.OperationalError:
+            pass
+
+        # Add book_format column to lists (book lists request ebooks,
+        # audiobooks or both; every other list type leaves it NULL)
+        try:
+            cursor.execute('ALTER TABLE lists ADD COLUMN book_format TEXT')
+            logging.info("Added book_format column to lists table")
         except sqlite3.OperationalError:
             pass
         
@@ -560,14 +604,14 @@ def init_database():
         logging.warning(f"Image migration check failed: {e}")
 
 
-def save_list_id(list_id: str, list_type: str, list_url: Optional[str] = None, item_count: Optional[int] = None, user_id: Optional[str] = None):
+def save_list_id(list_id: str, list_type: str, list_url: Optional[str] = None, item_count: Optional[int] = None, user_id: Optional[str] = None, book_format: Optional[str] = None):
     """
     Save list ID, URL, item count, and user_id to database, converting URLs to IDs if needed.
 
     Re-saving an existing list preserves the columns this call does not supply
-    (assigned user, last_synced, cached poster). Passing user_id=None means
-    "leave the assigned user alone", so callers that don't manage users can
-    never silently reset a list back to the admin account.
+    (assigned user, last_synced, cached poster, book format). Passing
+    user_id=None or book_format=None means "leave that alone", so callers that
+    don't manage them can never silently reset a list back to the defaults.
     """
     from .utils.helpers import construct_list_url
 
@@ -608,21 +652,27 @@ def save_list_id(list_id: str, list_type: str, list_url: Optional[str] = None, i
             # rewriting it could collide with a duplicate row holding the other
             # ID form.
             rowid = existing[0]
-            if user_id is None:
-                cursor.execute(
-                    "UPDATE lists SET list_url = ?, item_count = ? WHERE rowid = ?",
-                    (list_url, item_count, rowid)
-                )
-            else:
-                cursor.execute(
-                    "UPDATE lists SET list_url = ?, item_count = ?, user_id = ? WHERE rowid = ?",
-                    (list_url, item_count, str(user_id), rowid)
-                )
+            assignments = ["list_url = ?", "item_count = ?"]
+            values = [list_url, item_count]
+            if user_id is not None:
+                assignments.append("user_id = ?")
+                values.append(str(user_id))
+            if book_format is not None:
+                assignments.append("book_format = ?")
+                values.append(normalize_book_format(book_format))
+            values.append(rowid)
+            cursor.execute(
+                f"UPDATE lists SET {', '.join(assignments)} WHERE rowid = ?",
+                tuple(values)
+            )
         else:
             cursor.execute(
-                "INSERT INTO lists (list_type, list_id, list_url, item_count, user_id) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO lists (list_type, list_id, list_url, item_count, user_id, book_format) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (list_type, id_to_save, list_url, item_count,
-                 str(user_id) if user_id is not None else DEFAULT_REQUESTER_USER_ID)
+                 str(user_id) if user_id is not None else DEFAULT_REQUESTER_USER_ID,
+                 normalize_book_format(book_format) if book_format is not None
+                 else (DEFAULT_BOOK_FORMAT if is_book_provider(list_type) else None))
             )
 
         conn.commit()
@@ -678,6 +728,63 @@ def update_list_user_id(list_type: str, list_id: str, user_id: str) -> bool:
         return True
 
 
+def get_list_book_format(list_type: str, list_id: str) -> Optional[str]:
+    """
+    Get the format a book list requests.
+
+    Args:
+        list_type (str): Type of list
+        list_id (str): List ID or URL in any form
+
+    Returns:
+        Optional[str]: "ebook", "audiobook" or "both"; None for a list that
+            isn't configured or isn't a book list
+    """
+    if not is_book_provider(list_type):
+        return None
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        row = find_list_row(cursor, list_type, list_id)
+        if not row:
+            return None
+
+        cursor.execute("SELECT book_format FROM lists WHERE rowid = ?", (row[0],))
+        result = cursor.fetchone()
+        return normalize_book_format(result[0] if result else None, DEFAULT_BOOK_FORMAT)
+
+
+def update_list_book_format(list_type: str, list_id: str, book_format: str) -> bool:
+    """
+    Change which format a book list requests.
+
+    Args:
+        list_type (str): Type of list
+        list_id (str): List ID or URL in any form
+        book_format (str): "ebook", "audiobook" or "both"
+
+    Returns:
+        bool: True if a list was updated, False if no matching book list exists
+    """
+    if not is_book_provider(list_type):
+        logging.warning(f"Cannot set a book format on {list_type}:{list_id} - not a book list")
+        return False
+
+    normalized = normalize_book_format(book_format)
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        rows = find_list_rows(cursor, list_type, list_id)
+        if not rows:
+            logging.warning(f"Cannot set book format for {list_type}:{list_id} - list not found")
+            return False
+
+        for rowid, stored_id in rows:
+            cursor.execute("UPDATE lists SET book_format = ? WHERE rowid = ?", (normalized, rowid))
+            logging.info(f"List {list_type}:{stored_id} will now request {normalized}")
+        conn.commit()
+        return True
+
+
 def update_list_item_count(list_type: str, list_id: str, item_count: int):
     """Update the item count for an existing list."""
     with sqlite3.connect(DB_FILE) as conn:
@@ -715,7 +822,9 @@ def load_list_ids() -> List[Dict[str, str]]:
     """Load all saved list IDs from database."""
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT list_type, list_id, list_url, item_count, last_synced, user_id FROM lists")
+        cursor.execute(
+            "SELECT list_type, list_id, list_url, item_count, last_synced, user_id, book_format FROM lists"
+        )
         results = []
         for row in cursor.fetchall():
             list_item = {"type": row[0], "id": row[1]}
@@ -744,7 +853,14 @@ def load_list_ids() -> List[Dict[str, str]]:
                 list_item["user_id"] = str(row[5])
             else:
                 list_item["user_id"] = DEFAULT_REQUESTER_USER_ID
-                
+
+            # Book lists carry the format they request; other list types don't
+            # have one and are left without the key entirely.
+            if is_book_provider(row[0]):
+                list_item["book_format"] = normalize_book_format(
+                    row[6] if len(row) > 6 else None, DEFAULT_BOOK_FORMAT
+                )
+
             results.append(list_item)
         return results
 
@@ -783,26 +899,45 @@ def load_sync_interval() -> float:
         return result[0] if result else 0.0  # Default to 0.0 hours if not set
 
 
-def should_sync_item(overseerr_id: int) -> bool:
-    """Check if an item should be synced based on last sync time."""
+def should_sync_item(overseerr_id: Optional[int], external_id: Optional[str] = None) -> bool:
+    """
+    Check if an item should be synced based on last sync time.
+
+    Args:
+        overseerr_id: Numeric Seerr/TMDB ID, for movies and TV
+        external_id: Open Library work ID, for books - a book has no numeric ID
+            until Seerr has a library row for it, so it is matched on this
+
+    Returns:
+        bool: True when the item hasn't been synced inside the skip window
+    """
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT last_synced FROM synced_items
-            WHERE overseerr_id = ?
-            AND last_synced > datetime('now', '-48 hours')
-        ''', (overseerr_id,))
+        if external_id:
+            cursor.execute('''
+                SELECT last_synced FROM synced_items
+                WHERE external_id = ?
+                AND last_synced > datetime('now', '-48 hours')
+            ''', (str(external_id),))
+        elif overseerr_id:
+            cursor.execute('''
+                SELECT last_synced FROM synced_items
+                WHERE overseerr_id = ?
+                AND last_synced > datetime('now', '-48 hours')
+            ''', (overseerr_id,))
+        else:
+            return True
         result = cursor.fetchone()
         return result is None
 
 
-def save_sync_result(title: str, media_type: str, imdb_id: Optional[str], overseerr_id: Optional[int], status: str, year: Optional[int] = None, tmdb_id: Optional[str] = None, list_type: Optional[str] = None, list_id: Optional[str] = None):
+def save_sync_result(title: str, media_type: str, imdb_id: Optional[str], overseerr_id: Optional[int], status: str, year: Optional[int] = None, tmdb_id: Optional[str] = None, list_type: Optional[str] = None, list_id: Optional[str] = None, external_id: Optional[str] = None):
     """
     Save the result of a sync operation and track which list(s) it came from.
     
     Args:
         title: Media title
-        media_type: Media type (movie/tv)
+        media_type: Media type (movie/tv/book)
         imdb_id: IMDb ID
         overseerr_id: Seerr ID
         status: Sync status
@@ -810,6 +945,7 @@ def save_sync_result(title: str, media_type: str, imdb_id: Optional[str], overse
         tmdb_id: TMDB ID
         list_type: Type of list this item came from (e.g., 'imdb', 'trakt')
         list_id: ID of the list this item came from
+        external_id: Open Library work ID, for books
     """
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
@@ -817,9 +953,17 @@ def save_sync_result(title: str, media_type: str, imdb_id: Optional[str], overse
         # Get or create the item record
         # Try to find existing item by multiple possible keys (overseerr_id is most reliable)
         item_db_id = None
-        
+
+        # A book has no numeric ID of its own, so its Open Library work ID is
+        # the only thing that identifies it between syncs - check it first.
+        if external_id:
+            cursor.execute('SELECT id FROM synced_items WHERE external_id = ?', (str(external_id),))
+            existing = cursor.fetchone()
+            if existing:
+                item_db_id = existing[0]
+
         # Try overseerr_id first (most reliable)
-        if overseerr_id:
+        if not item_db_id and overseerr_id:
             cursor.execute('SELECT id FROM synced_items WHERE overseerr_id = ?', (overseerr_id,))
             existing = cursor.fetchone()
             if existing:
@@ -846,16 +990,17 @@ def save_sync_result(title: str, media_type: str, imdb_id: Optional[str], overse
                 cursor.execute('''
                     UPDATE synced_items 
                     SET status = ?, title = ?, media_type = ?, year = ?, imdb_id = ?, tmdb_id = ?,
+                        external_id = COALESCE(?, external_id),
                         source_list_type = ?, source_list_id = ?
                     WHERE id = ?
-                ''', (status, title, media_type, year, imdb_id, tmdb_id, list_type, list_id, item_db_id))
+                ''', (status, title, media_type, year, imdb_id, tmdb_id, external_id, list_type, list_id, item_db_id))
             else:
                 # Insert new item
                 cursor.execute('''
                     INSERT INTO synced_items 
-                    (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, last_synced, source_list_type, source_list_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
-                ''', (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, list_type, list_id))
+                    (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, external_id, last_synced, source_list_type, source_list_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+                ''', (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, external_id, list_type, list_id))
                 item_db_id = cursor.lastrowid
         else:
             # For non-skipped items, update last_synced timestamp
@@ -864,17 +1009,18 @@ def save_sync_result(title: str, media_type: str, imdb_id: Optional[str], overse
                 cursor.execute('''
                     UPDATE synced_items 
                     SET title = ?, media_type = ?, year = ?, imdb_id = ?, tmdb_id = ?, 
-                        overseerr_id = ?, status = ?, last_synced = CURRENT_TIMESTAMP,
+                        overseerr_id = ?, status = ?,
+                        external_id = COALESCE(?, external_id), last_synced = CURRENT_TIMESTAMP,
                         source_list_type = ?, source_list_id = ?
                     WHERE id = ?
-                ''', (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, list_type, list_id, item_db_id))
+                ''', (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, external_id, list_type, list_id, item_db_id))
             else:
                 # Insert new item
                 cursor.execute('''
                     INSERT INTO synced_items 
-                    (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, last_synced, source_list_type, source_list_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
-                ''', (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, list_type, list_id))
+                    (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, external_id, last_synced, source_list_type, source_list_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+                ''', (title, media_type, year, imdb_id, tmdb_id, overseerr_id, status, external_id, list_type, list_id))
                 item_db_id = cursor.lastrowid
         
         # Link item to list(s) if list information provided

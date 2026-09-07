@@ -129,6 +129,8 @@ const formatProvider = (type: string) => {
     simkl: 'Simkl',
     tvdb: 'TVDB',
     anilist: 'AniList',
+    goodreads: 'Goodreads',
+    openlibrary: 'Open Library',
   }
   return providers[type.toLowerCase()] || type
 }

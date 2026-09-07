@@ -19,7 +19,7 @@ class SyncResults:
         self.start_time = time.time()
         self.not_found_items = []  # For #1
         self.error_items = []      # For #4
-        self.media_type_counts = {"movie": 0, "tv": 0}  # For #5
+        self.media_type_counts = {"movie": 0, "tv": 0, "book": 0}  # For #5
         self.year_distribution = {
             "pre-1980": 0,
             "1980-1999": 0,
@@ -61,7 +61,12 @@ class SyncResults:
         summary += "Media Types\n"
         summary += "──────────\n"
         summary += f"Movies: {self.media_type_counts['movie']} ({self.media_type_counts['movie']/total_items*100:.1f}%)\n"
-        summary += f"TV Shows: {self.media_type_counts['tv']} ({self.media_type_counts['tv']/total_items*100:.1f}%)\n\n"
+        summary += f"TV Shows: {self.media_type_counts['tv']} ({self.media_type_counts['tv']/total_items*100:.1f}%)\n"
+        # Books only appear once a book list is configured, so the line is left
+        # out entirely for the movie and TV setups that are the common case.
+        if self.media_type_counts.get('book'):
+            summary += f"Books: {self.media_type_counts['book']} ({self.media_type_counts['book']/total_items*100:.1f}%)\n"
+        summary += "\n"
         
         # Synced Lists section
         if self.synced_lists:

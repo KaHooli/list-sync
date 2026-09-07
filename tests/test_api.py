@@ -81,6 +81,70 @@ r = client.patch("/api/lists/imdb/ls555000111/user", json={"user_id": "7"})
 check("url-stored list reassigned by id", r.status_code, 200)
 check("url-stored list persisted", db.get_list_user_id("imdb", "https://www.imdb.com/list/ls555000111"), "7")
 
+# --- book lists are gated on what the connected Seerr can request ----------
+def with_book_support(**books):
+    """Pin the capability answer the endpoints read, as the probe would."""
+    answer = {"supported": True, "ebook": True, "audiobook": True,
+              "known": True, "reason": "Book requests are available."}
+    answer.update(books)
+    api_server._capabilities_cache = (float("inf"), {"books": answer})
+
+# No book support: the list is refused rather than stored to fail every sync.
+with_book_support(supported=False, ebook=False, audiobook=False,
+                  reason="This Seerr server has no book support.")
+r = client.post("/api/lists", json={"list_type": "goodreads", "list_id": "19281606:to-read",
+                                    "user_id": "7"})
+check("book list refused without support", r.status_code, 400)
+check("nothing stored", db.get_list_book_format("goodreads", "19281606:to-read"), None)
+
+caps = client.get("/api/system/capabilities").json()
+check("capabilities report no formats", caps["books"]["formats"], [])
+check("capabilities name the book providers", caps["books"]["providers"],
+      ["goodreads", "openlibrary"])
+
+# Audiobooks only: an ebook list is refused, an audiobook list is stored.
+with_book_support(ebook=False, reason="No default ebook Bookshelf server.")
+r = client.post("/api/lists", json={"list_type": "goodreads", "list_id": "19281606:to-read",
+                                    "user_id": "7", "book_format": "ebook"})
+check("unavailable format refused", r.status_code, 400)
+
+r = client.post("/api/lists", json={"list_type": "goodreads", "list_id": "19281606:to-read",
+                                    "user_id": "7", "book_format": "audiobook"})
+check("available format accepted", r.status_code, 200)
+check("format returned", r.json()["book_format"], "audiobook")
+check("format persisted", db.get_list_book_format("goodreads", "19281606:to-read"), "audiobook")
+
+caps = client.get("/api/system/capabilities").json()
+check("only the usable format is offered", caps["books"]["formats"], ["audiobook"])
+
+row = next(l for l in client.get("/api/lists").json()["lists"]
+           if l["list_id"] == "19281606:to-read")
+check("list reports its format", row["book_format"], "audiobook")
+check("movie lists report no format",
+      next(l for l in client.get("/api/lists").json()["lists"]
+           if l["list_id"] == "ls123456789")["book_format"], None)
+
+# Changing the format goes through the same capability check.
+r = client.patch("/api/lists/goodreads/19281606:to-read/book-format", json={"book_format": "ebook"})
+check("switch to unavailable format refused", r.status_code, 400)
+
+with_book_support()
+r = client.patch("/api/lists/goodreads/19281606:to-read/book-format", json={"book_format": "both"})
+check("switch format", r.status_code, 200)
+check("switch persisted", db.get_list_book_format("goodreads", "19281606:to-read"), "both")
+
+r = client.patch("/api/lists/goodreads/19281606:to-read/book-format", json={"book_format": "paperback"})
+check("unknown format refused", r.status_code, 400)
+r = client.patch("/api/lists/imdb/ls123456789/book-format", json={"book_format": "ebook"})
+check("format refused on a movie list", r.status_code, 400)
+r = client.patch("/api/lists/goodreads/42:read/book-format", json={"book_format": "ebook"})
+check("format on a missing list", r.status_code, 404)
+
+# A book list added without a format takes the documented default.
+r = client.post("/api/lists", json={"list_type": "openlibrary", "list_id": "jane/OL123L",
+                                    "user_id": "7"})
+check("default format applied", r.json()["book_format"], "ebook")
+
 print()
 print("FAILED:", fail if fail else "none")
 sys.exit(1 if fail else 0)

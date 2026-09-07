@@ -66,7 +66,7 @@
             <!-- Provider Grid -->
             <div class="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3">
               <button
-                v-for="source in sources"
+                v-for="source in availableSources"
                 :key="source.value"
                 type="button"
                 :class="[
@@ -317,11 +317,46 @@
                 @blur="validateInput"
                 @keydown.enter="handleAddList"
               />
-              
+
+              <!-- Book format: Seerr requests the ebook and the audiobook
+                   separately, so a shelf has to say which it wants -->
+              <div v-if="isBookSource && bookFormatOptions.length > 1" class="space-y-1.5">
+                <p class="text-xs font-medium text-foreground">Request as</p>
+                <div class="inline-flex rounded-full border border-border overflow-hidden">
+                  <button
+                    v-for="option in bookFormatOptions"
+                    :key="option.value"
+                    type="button"
+                    :class="[
+                      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
+                      selectedBookFormat === option.value
+                        ? 'bg-green-600 text-white'
+                        : 'bg-black/20 text-muted-foreground hover:bg-white/5'
+                    ]"
+                    @click="selectedBookFormat = option.value"
+                  >
+                    <component :is="option.icon" :size="12" />
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+
               <div class="flex items-start gap-2 p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
                 <component :is="InfoIcon" :size="14" class="text-purple-400 flex-shrink-0 mt-0.5" />
                 <p class="text-[11px] text-muted-foreground leading-relaxed">
                   {{ getHelperText(selectedSource) }}
+                </p>
+              </div>
+
+              <!-- Seerr supports books but has no Bookshelf server for one of
+                   the formats: say so before a sync finds out the hard way -->
+              <div
+                v-if="isBookSource && bookSupport && bookFormatOptions.length < 3"
+                class="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20"
+              >
+                <component :is="InfoIcon" :size="14" class="text-amber-400 flex-shrink-0 mt-0.5" />
+                <p class="text-[11px] text-muted-foreground leading-relaxed">
+                  {{ bookSupport.reason }}
                 </p>
               </div>
             </div>
@@ -363,6 +398,9 @@
                   <component :is="getSourceIcon(list.source || list.listType || '')" :size="16" :class="getSourceColor(list.source || list.listType || '').color" />
                 </div>
                 <span class="flex-1 truncate text-foreground">{{ list.displayName }}</span>
+                <span v-if="list.bookFormat" class="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-300 border border-green-500/30">
+                  {{ bookFormatLabel(list.bookFormat) }}
+                </span>
                 <span class="text-muted-foreground">{{ formatListSource(list.source || list.listType || '') }}</span>
               </div>
             </div>
@@ -513,7 +551,11 @@ import {
   Layers as LayersIcon,
   Search as SearchIcon,
   ExternalLink as ExternalLinkIcon,
+  Library as LibraryIcon,
+  Headphones as HeadphonesIcon,
+  Book as BookIcon,
 } from 'lucide-vue-next'
+import type { BookFormat, CreateListRequest, SystemCapabilities } from '~/types'
 import { useSyncStore } from '~/stores/sync'
 import { useUsersStore } from '~/stores/users'
 import SelectedListsSidebar from './SelectedListsSidebar.vue'
@@ -548,6 +590,12 @@ const showMobileSidebar = ref(false)
 const userManuallySelected = ref(false)
 const overseerrUrl = ref('')
 
+// Books can only be requested by a Seerr build that supports them (SeerrNG,
+// through a Chaptarr/Readarr-compatible Bookshelf service). Until the server
+// says it can, the book providers stay out of the picker entirely.
+const bookSupport = ref<SystemCapabilities['books'] | null>(null)
+const selectedBookFormat = ref<BookFormat>('ebook')
+
 // Collapsed categories state
 const collapsedCategories = ref<Record<string, boolean>>({})
 
@@ -559,6 +607,7 @@ const listsToAdd = ref<Array<{
   displayName: string
   listType?: string
   mediaType?: string
+  bookFormat?: BookFormat
 }>>([])
 
 // Trakt Special state
@@ -579,10 +628,14 @@ watch(() => props.modelValue, async (newValue, oldValue) => {
   if (newValue && !oldValue) {
     userManuallySelected.value = false
     try {
-      const [config] = await Promise.all([
+      const [config, capabilities] = await Promise.all([
         api.getConfig(),
+        api.getCapabilities().catch(() => null),
         usersStore.fetchUsers()
       ])
+
+      bookSupport.value = capabilities?.books ?? null
+      selectedBookFormat.value = defaultBookFormat()
       
       // Store Seerr URL for avatar images
       if (config.overseerr_url) {
@@ -619,7 +672,7 @@ watch(selectedUserId, (newUserId, oldUserId) => {
 })
 
 // Sources configuration
-const sources = [
+const movieAndTvSources = [
   { label: 'IMDb', value: 'imdb', icon: StarIcon, color: 'text-yellow-400', bgColor: 'bg-yellow-500/20', borderColor: 'border-yellow-500/40' },
   { label: 'Trakt', value: 'trakt', icon: TrendingUpIcon, color: 'text-green-400', bgColor: 'bg-green-500/20', borderColor: 'border-green-500/40' },
   { label: 'Trakt Special', value: 'trakt_special', icon: ZapIcon, color: 'text-purple-400', bgColor: 'bg-purple-500/20', borderColor: 'border-purple-500/40' },
@@ -630,6 +683,45 @@ const sources = [
   { label: 'TVDB', value: 'tvdb', icon: CalendarIcon, color: 'text-indigo-400', bgColor: 'bg-indigo-500/20', borderColor: 'border-indigo-500/40' },
   { label: 'AniList', value: 'anilist', icon: SparklesIcon, color: 'text-amber-400', bgColor: 'bg-amber-500/20', borderColor: 'border-amber-500/40' },
 ]
+
+// Book sources. Seerr only requests books on builds that support them, so
+// these appear once the server has said it can.
+const bookSources = [
+  { label: 'Goodreads', value: 'goodreads', icon: BookIcon, color: 'text-orange-400', bgColor: 'bg-orange-500/20', borderColor: 'border-orange-500/40' },
+  { label: 'Open Library', value: 'openlibrary', icon: LibraryIcon, color: 'text-teal-400', bgColor: 'bg-teal-500/20', borderColor: 'border-teal-500/40' },
+]
+
+// Every source known to the UI, used for labels and icons on lists that
+// already exist even when the server can no longer request them.
+const sources = [...movieAndTvSources, ...bookSources]
+
+const availableSources = computed(() =>
+  bookSupport.value?.supported ? sources : movieAndTvSources
+)
+
+const isBookSource = computed(() => bookSources.some(s => s.value === selectedSource.value))
+
+// Prefer "both" when the server can do both, so a shelf brings in whichever
+// edition turns up first - the same default Chaptarr's own import lists use.
+const defaultBookFormat = (): BookFormat => {
+  const available = bookSupport.value?.formats ?? []
+  if (available.includes('both')) return 'both'
+  return available[0] ?? 'ebook'
+}
+
+// Which formats this server can actually deliver, in the order the toggle
+// shows them (mirroring Chaptarr's own Audiobooks / Both / eBooks control).
+const bookFormatLabel = (format: BookFormat) =>
+  ({ ebook: 'eBooks', audiobook: 'Audiobooks', both: 'Audiobooks + eBooks' })[format] || format
+
+const bookFormatOptions = computed(() => {
+  const available = bookSupport.value?.formats ?? []
+  return [
+    { label: 'Audiobooks', value: 'audiobook' as BookFormat, icon: HeadphonesIcon },
+    { label: 'Both', value: 'both' as BookFormat, icon: LibraryIcon },
+    { label: 'eBooks', value: 'ebook' as BookFormat, icon: BookOpenIcon },
+  ].filter(option => available.includes(option.value))
+})
 
 // Trakt special options
 const traktSpecialTypes = [
@@ -897,6 +989,7 @@ const allSelectedLists = computed(() => {
         displayName: getDisplayName(),
         listType: currentListType,
         mediaType: isTraktSpecial.value ? selectedTraktMedia.value : undefined,
+        bookFormat: isBookSource.value ? selectedBookFormat.value : undefined,
         isCurrent: true
       }
       lists.push(currentList)
@@ -1036,6 +1129,8 @@ const getPlaceholder = (source: string) => {
     tmdb: 'https://www.themoviedb.org/list/{id}',
     tvdb: 'https://www.thetvdb.com/lists/{name}',
     anilist: 'https://anilist.co/user/{username}/animelist',
+    goodreads: "'19281606' or '19281606:to-read'",
+    openlibrary: "'username/OL123L' or 'username:want-to-read'",
   }
   return placeholders[source] || 'Enter list ID or URL'
 }
@@ -1050,6 +1145,8 @@ const getHelperText = (source: string) => {
     tmdb: 'Enter the full TMDB list URL',
     tvdb: 'Enter the full TVDB list URL',
     anilist: 'Enter the AniList URL or just the username',
+    goodreads: 'Enter your numeric Goodreads user ID (from your profile URL), optionally followed by ":shelf" - "to-read" is used if you leave it out. The shelf must be public.',
+    openlibrary: 'Enter "username/OL123L" for an Open Library list, or "username:want-to-read" for a public reading log shelf.',
   }
   return helpers[source] || 'Enter the list identifier'
 }
@@ -1179,7 +1276,8 @@ const handleAddList = () => {
       listId: finalListId,
       displayName: getDisplayName(),
       listType: finalListType,
-      mediaType: isTraktSpecial.value ? selectedTraktMedia.value : undefined
+      mediaType: isTraktSpecial.value ? selectedTraktMedia.value : undefined,
+      bookFormat: isBookSource.value ? selectedBookFormat.value : undefined
     }
     
     listsToAdd.value.push(newList)
@@ -1202,6 +1300,7 @@ const addAnotherList = () => {
   selectedTraktMedia.value = ''
   error.value = ''
   presetSearch.value = ''
+  selectedBookFormat.value = defaultBookFormat()
   currentStep.value = 1
 }
 
@@ -1281,6 +1380,20 @@ const validateInput = () => {
       error.value = 'Enter a valid AniList URL or username'
       return false
     }
+  } else if (selectedSource.value === 'goodreads') {
+    const isValid = /^\d+(:[\w-]+)?$/.test(value) || value.includes('goodreads.com/')
+    if (!isValid) {
+      error.value = 'Enter your numeric Goodreads user ID, optionally with ":shelf"'
+      return false
+    }
+  } else if (selectedSource.value === 'openlibrary') {
+    const isValid = /^[^/:]+\/OL\d+L$/i.test(value) ||
+                    /^[^/:]+:(want-to-read|currently-reading|already-read|to-read|read|reading)$/i.test(value) ||
+                    value.includes('openlibrary.org/people/')
+    if (!isValid) {
+      error.value = 'Enter "username/OL123L" or "username:want-to-read"'
+      return false
+    }
   }
 
   return true
@@ -1305,7 +1418,8 @@ const handleSubmitAll = async () => {
         listId: finalListId,
         displayName: getDisplayName(),
         listType: finalListType,
-        mediaType: isTraktSpecial.value ? selectedTraktMedia.value : undefined
+        mediaType: isTraktSpecial.value ? selectedTraktMedia.value : undefined,
+        bookFormat: isBookSource.value ? selectedBookFormat.value : undefined
       })
     }
   }
@@ -1325,9 +1439,10 @@ const handleSubmitAll = async () => {
     // Add all lists
     for (const list of allLists) {
       await listsStore.addList({
-        list_type: list.listType || list.source,
+        list_type: (list.listType || list.source) as CreateListRequest['list_type'],
         list_id: list.listId,
         user_id: String(selectedUserId.value),
+        ...(list.bookFormat ? { book_format: list.bookFormat } : {}),
       })
     }
 
@@ -1378,6 +1493,7 @@ const handleClose = () => {
     error.value = ''
     listsToAdd.value = []
     presetSearch.value = ''
+    selectedBookFormat.value = defaultBookFormat()
     showMobileSidebar.value = false
   }, 300)
 }

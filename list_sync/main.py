@@ -15,6 +15,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from .api.seerr import SeerrClient
 from .api import tmdb as tmdb_api
+from .books import DEFAULT_BOOK_FORMAT, format_label, is_book_provider, normalize_book_format
 from .config import (
     load_config, load_env_config, load_env_lists, save_config,
     CONFIG_FILE
@@ -325,6 +326,7 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
         list_type = list_info["type"]
         list_id = list_info["id"]
         list_user_id = list_info.get("user_id", "1")
+        list_book_format = list_info.get("book_format")
         
         try:
             # Display progress message to user
@@ -352,6 +354,7 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                         item['_source_list_type'] = list_type
                         item['_source_list_id'] = list_id
                         item['_source_list_user_id'] = list_user_id
+                        item['_source_list_book_format'] = list_book_format
                         valid_items.append(item)
                     else:
                         logging.warning(f"Skipping item with empty title from {list_type.upper()} list: {list_id}")
@@ -367,7 +370,8 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                     'id': list_id,
                     'url': list_url,
                     'item_count': len(media_items),
-                    'user_id': list_user_id
+                    'user_id': list_user_id,
+                    'book_format': list_book_format
                 })
             else:
                 # Display warning message to user
@@ -380,7 +384,8 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                     'id': list_id,
                     'url': list_url,
                     'item_count': 0,
-                    'user_id': list_user_id
+                    'user_id': list_user_id,
+                    'book_format': list_book_format
                 })
         except SyncCancelledException:
             # Cancellation was requested - return what we have so far
@@ -400,6 +405,7 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                 'url': list_url,
                 'item_count': 0,
                 'user_id': list_user_id,
+                'book_format': list_book_format,
                 'error': str(e)
             })
     
@@ -419,7 +425,9 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
         
         # Track which list this item came from
         list_user_id = item.get('_source_list_user_id', "1")
-        list_info = {'type': list_type, 'id': list_id, 'user_id': list_user_id}
+        list_book_format = item.get('_source_list_book_format')
+        list_info = {'type': list_type, 'id': list_id, 'user_id': list_user_id,
+                     'book_format': list_book_format}
         
         # Try to match by IMDb ID first (most reliable)
         if imdb_id:
@@ -434,8 +442,11 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                 if '_source_lists' not in existing_item:
                     existing_item['_source_lists'] = []
                 # Check if this list is already tracked (by comparing type and id)
-                list_key = f"{list_type}:{list_id}:{list_user_id}"
-                existing_keys = [f"{l['type']}:{l['id']}:{l.get('user_id','1')}" for l in existing_item['_source_lists']]
+                list_key = f"{list_type}:{list_id}:{list_user_id}:{list_book_format}"
+                existing_keys = [
+                    f"{l['type']}:{l['id']}:{l.get('user_id','1')}:{l.get('book_format')}"
+                    for l in existing_item['_source_lists']
+                ]
                 if list_key not in existing_keys:
                     existing_item['_source_lists'].append(list_info)
         # Try TMDB ID as fallback
@@ -448,8 +459,11 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                 existing_item = seen_tmdb_ids[tmdb_id]
                 if '_source_lists' not in existing_item:
                     existing_item['_source_lists'] = []
-                list_key = f"{list_type}:{list_id}:{list_user_id}"
-                existing_keys = [f"{l['type']}:{l['id']}:{l.get('user_id','1')}" for l in existing_item['_source_lists']]
+                list_key = f"{list_type}:{list_id}:{list_user_id}:{list_book_format}"
+                existing_keys = [
+                    f"{l['type']}:{l['id']}:{l.get('user_id','1')}:{l.get('book_format')}"
+                    for l in existing_item['_source_lists']
+                ]
                 if list_key not in existing_keys:
                     existing_item['_source_lists'].append(list_info)
         # Fallback to title + year + media_type
@@ -462,8 +476,11 @@ def fetch_media_from_lists(list_ids: List[Dict[str, str]], is_single_list: bool 
                 existing_item = seen_titles[title_key]
                 if '_source_lists' not in existing_item:
                     existing_item['_source_lists'] = []
-                list_key = f"{list_type}:{list_id}:{list_user_id}"
-                existing_keys = [f"{l['type']}:{l['id']}:{l.get('user_id','1')}" for l in existing_item['_source_lists']]
+                list_key = f"{list_type}:{list_id}:{list_user_id}:{list_book_format}"
+                existing_keys = [
+                    f"{l['type']}:{l['id']}:{l.get('user_id','1')}:{l.get('book_format')}"
+                    for l in existing_item['_source_lists']
+                ]
                 if list_key not in existing_keys:
                     existing_item['_source_lists'].append(list_info)
     
@@ -501,11 +518,15 @@ def get_source_lists_from_item(item: Dict[str, Any], list_type: Optional[str] = 
         source_list_id = item.get('_source_list_id')
         source_list_user_id = item.get('_source_list_user_id', "1")
         if source_list_type and source_list_id:
-            source_lists = [{'type': source_list_type, 'id': source_list_id, 'user_id': source_list_user_id}]
+            source_lists = [{'type': source_list_type, 'id': source_list_id,
+                             'user_id': source_list_user_id,
+                             'book_format': item.get('_source_list_book_format')}]
     
     # Fallback 2: Use function parameters
     if not source_lists and list_type and list_id:
-        source_lists = [{'type': list_type, 'id': list_id, 'user_id': item.get('_source_list_user_id', "1")}]
+        source_lists = [{'type': list_type, 'id': list_id,
+                         'user_id': item.get('_source_list_user_id', "1"),
+                         'book_format': item.get('_source_list_book_format')}]
     
     # Ensure all source list entries carry user_id (default to "1")
     for sl in source_lists:
@@ -545,6 +566,222 @@ def collect_request_user_ids(source_lists: List[Dict[str, Any]], default_user_id
     return user_ids
 
 
+def process_book_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run: bool,
+                      list_type: Optional[str] = None, list_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Process a single book for sync to Seerr.
+
+    Books take a different route to movies and TV: Seerr identifies them by
+    Open Library work ID rather than TMDB ID, tracks the ebook and the
+    audiobook separately, and only offers any of this on a build with book
+    support. Matching therefore goes:
+      1. The Open Library ID the list gave us (exact - no matching needed)
+      2. The ISBN from the shelf, as an exact Open Library field search
+      3. Title and author, scored against Seerr's book search
+
+    Args:
+        item (Dict[str, Any]): Book item from a list
+        seerr_client (SeerrClient): Seerr API client
+        dry_run (bool): Whether to perform a dry run
+        list_type (Optional[str]): Fallback list type for this item
+        list_id (Optional[str]): Fallback list ID for this item
+
+    Returns:
+        Dict[str, Any]: Processing result
+    """
+    title = (item.get('title') or 'Unknown Title').replace('\\', '').strip()
+    year = item.get('year')
+    author = item.get('author')
+    isbn = item.get('isbn')
+    openlibrary_id = item.get('openlibrary_id')
+
+    logging.info(f"📚 PROCESSING: '{title}' ({year}) by {author or 'unknown author'}")
+    logging.info(f"   IDs: OpenLibrary={openlibrary_id}, ISBN={isbn}")
+
+    result = {"title": title, "year": year, "media_type": "book", "error_message": None}
+
+    if dry_run:
+        result["status"] = "would_be_synced"
+        return result
+
+    source_lists = get_source_lists_from_item(item, list_type, list_id)
+    if not source_lists:
+        logging.error(f"❌ CRITICAL: No source lists found for book '{title}'!")
+
+    requests_to_make = collect_book_requests(
+        source_lists, seerr_client.requester_user_id, DEFAULT_BOOK_FORMAT
+    )
+
+    def save_for_all_lists(status: str, external_id: Optional[str] = None):
+        for source_list in source_lists:
+            save_sync_result(title, "book", None, None, status, year, None,
+                             source_list['type'], source_list['id'], external_id=external_id)
+
+    try:
+        # A server without book support can't answer any of this, and saying so
+        # once per book beats a page of 404s.
+        books = seerr_client.get_capabilities()["books"]
+        if not books["supported"]:
+            logging.error(f"❌ ERROR: Cannot request '{title}' - {books['reason']}")
+            result["status"] = "error"
+            result["error_message"] = books["reason"]
+            save_for_all_lists("error")
+            return result
+
+        match = None
+        if openlibrary_id:
+            logging.info(f"🎯 METHOD 1: Direct Open Library ID lookup ({openlibrary_id})")
+            match = seerr_client.get_book(openlibrary_id)
+
+        if not match:
+            logging.info("🔍 METHOD 2: Seerr book search (ISBN, then title and author)")
+            match = seerr_client.search_book(title, author=author, year=year, isbn=isbn)
+
+        if not match:
+            logging.error(f"❌ ERROR: Could not find '{title}' by {author or 'unknown author'} in Seerr")
+            if source_lists:
+                save_for_all_lists("not_found")
+            return {"title": title, "status": "not_found", "year": year, "media_type": "book"}
+
+        book_id = match["id"]
+        logging.info(f"📊 MATCH SUMMARY: Open Library ID={book_id}, title='{match.get('title')}'")
+
+        if not should_sync_item(None, external_id=book_id):
+            logging.info("⏭️  SKIP: Recently synced (within skip window)")
+            save_for_all_lists("skipped", book_id)
+            return {"title": title, "status": "skipped", "year": year, "media_type": "book"}
+
+        statuses = []
+        for user_id, book_format in requests_to_make:
+            # Warn rather than switch formats: a shelf configured for
+            # audiobooks should not quietly turn into an ebook request.
+            missing = [
+                label for label, available, wanted in (
+                    ("eBooks", books["ebook"], book_format in ("ebook", "both")),
+                    ("Audiobooks", books["audiobook"], book_format in ("audiobook", "both")),
+                ) if wanted and not available
+            ]
+            if missing:
+                logging.warning(
+                    f"⚠️  Seerr has no default Bookshelf server for {' and '.join(missing)}; "
+                    f"the request for '{title}' will probably be rejected."
+                )
+
+            state = seerr_client.book_state_from_media_info(match.get("media_info"), book_format)
+
+            if state["is_blocklisted"]:
+                logging.info(f"🚫 STATUS: '{title}' is blocklisted in Seerr")
+                statuses.append("blocklisted")
+                continue
+
+            if state["is_available"]:
+                logging.info(f"☑️ STATUS: {format_label(book_format)} already available in library")
+                statuses.append("already_available")
+                continue
+
+            # Seerr allows one open request per book per format, whoever made
+            # it, so someone else's pending request settles this for everyone.
+            existing = state["requested_by_user_ids"]
+            if existing:
+                logging.info(
+                    f"📌 STATUS: {format_label(book_format)} already requested by "
+                    f"{', '.join(sorted(existing))}"
+                )
+                statuses.append("already_requested")
+                continue
+
+            logging.info(f"🚀 STATUS: Requesting {format_label(book_format)} as user {user_id}...")
+            request_status = seerr_client.request_book(
+                book_id,
+                book_format=book_format,
+                edition_id=item.get('openlibrary_edition_id') or match.get('edition_id'),
+                author_id=item.get('openlibrary_author_id') or match.get('author_id'),
+                isbn13=match.get('isbn13'),
+                requester_user_id=user_id,
+            )
+            statuses.append(request_status)
+
+            if request_status == "success":
+                # The book now has an open request covering this format, so
+                # anything overlapping it would only earn a 409.
+                logging.info(f"✅ SUCCESS: Request submitted for {format_label(book_format)}")
+                match["media_info"] = _record_pending_book_request(
+                    match.get("media_info"), user_id, book_format
+                )
+
+        if "success" in statuses:
+            final_status = "requested"
+        elif "already_requested" in statuses:
+            final_status = "already_requested"
+        elif "already_available" in statuses:
+            final_status = "already_available"
+        elif "blocklisted" in statuses:
+            final_status = "skipped"
+        else:
+            logging.error(f"❌ ERROR: Request failed for all {len(statuses)} request(s)")
+            final_status = "request_failed"
+
+        save_for_all_lists(final_status, book_id)
+        return {"title": title, "status": final_status, "year": year, "media_type": "book"}
+
+    except Exception as e:
+        logging.error(f"❌ ERROR: Exception while processing book '{title}': {str(e)}")
+        logging.debug("Exception details:", exc_info=True)
+        result["status"] = "error"
+        result["error_message"] = str(e)
+        try:
+            save_for_all_lists("error")
+        except Exception as save_error:
+            logging.error(f"Failed to save error status: {save_error}")
+        return result
+
+
+def _record_pending_book_request(media_info: Optional[Dict[str, Any]], user_id: str,
+                                 book_format: str) -> Dict[str, Any]:
+    """
+    Note a request we just made against the book we already have in hand.
+
+    Without this, a book on two lists would be requested once and then rejected
+    with a 409 for every other list, because the state we are working from was
+    read before the first request existed.
+    """
+    updated = dict(media_info or {})
+    requests = list(updated.get("requests") or [])
+    requests.append({"bookFormat": book_format, "requestedBy": {"id": user_id}})
+    updated["requests"] = requests
+    return updated
+
+
+def collect_book_requests(source_lists: List[Dict[str, Any]], default_user_id: str,
+                          default_format: str = DEFAULT_BOOK_FORMAT) -> List[Tuple[str, str]]:
+    """
+    Work out which (user, format) requests a book needs.
+
+    A book can sit on two people's shelves, and the same person can keep an
+    audiobook shelf and an ebook shelf, so the pair - not the user alone -
+    is what identifies a request.
+
+    Args:
+        source_lists: The lists this book came from
+        default_user_id: Requester to use for lists with no user assigned
+        default_format: Format to use for lists with no format assigned
+
+    Returns:
+        List[Tuple[str, str]]: Distinct (user ID, format) pairs, in first-seen order
+    """
+    requests = []
+    for source in source_lists:
+        user_id = str(source.get('user_id') or default_user_id or "1")
+        book_format = normalize_book_format(source.get('book_format'), default_format)
+        if (user_id, book_format) not in requests:
+            requests.append((user_id, book_format))
+
+    if not requests:
+        requests.append((str(default_user_id or "1"), normalize_book_format(default_format)))
+
+    return requests
+
+
 def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run: bool, is_4k: bool = False, list_type: Optional[str] = None, list_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Process a single media item for sync to Seerr using smart ID-based matching.
@@ -571,6 +808,11 @@ def process_media_item(item: Dict[str, Any], seerr_client: SeerrClient, dry_run:
         year = item.get('year')
         return {"title": title, "status": "cancelled", "year": year, "media_type": media_type}
     
+    # Books go through Seerr's book endpoints, which take an Open Library ID
+    # and a format rather than a TMDB ID and a resolution.
+    if item.get('media_type') == 'book':
+        return process_book_item(item, seerr_client, dry_run, list_type, list_id)
+
     title = item.get('title', 'Unknown Title').strip()
     # Clean up backslashes and other problematic characters
     title = title.replace('\\', '').strip()
@@ -883,6 +1125,42 @@ def verify_list_requesters(synced_lists: List[Dict[str, Any]], seerr_client: See
             print(color_gradient(f"\n❌  {reason}\n    Affected list(s): {lists_desc}", "#ff0000", "#aa0000"))
 
 
+def verify_book_support(synced_lists: List[Dict[str, Any]], seerr_client: SeerrClient) -> None:
+    """
+    Say once, up front, whether the book lists in this sync can be requested.
+
+    Book support is not universal - it needs a Seerr build that has it (SeerrNG)
+    with a Bookshelf service configured. Reporting that here names the lists
+    affected, instead of leaving the same explanation to repeat itself against
+    every book on them.
+
+    Args:
+        synced_lists: The lists taking part in this sync
+        seerr_client: Client used to probe the server
+    """
+    book_lists = [
+        f"{list_info.get('type', '?').upper()}:{list_info.get('id', '?')}"
+        for list_info in synced_lists or []
+        if is_book_provider(list_info.get('type'))
+    ]
+    if not book_lists:
+        return
+
+    try:
+        books = seerr_client.get_capabilities()["books"]
+    except Exception as e:
+        logging.warning(f"Could not check this server for book support: {e}")
+        return
+
+    lists_desc = ", ".join(book_lists)
+    if books["supported"] and (books["ebook"] or books["audiobook"]):
+        logging.info(f"📚 {books['reason']} — for {lists_desc}")
+    else:
+        logging.error(f"❌ {books['reason']} Affected list(s): {lists_desc}")
+        print(color_gradient(f"\n❌  {books['reason']}\n    Affected list(s): {lists_desc}",
+                             "#ff0000", "#aa0000"))
+
+
 def sync_media_to_overseerr(
     media_items: List[Dict[str, Any]],
     seerr_client: SeerrClient,
@@ -914,6 +1192,7 @@ def sync_media_to_overseerr(
 
     if not dry_run:
         verify_list_requesters(sync_results.synced_lists, seerr_client)
+        verify_book_support(sync_results.synced_lists, seerr_client)
 
     print(f"\n🎬  Processing {sync_results.total_items} media items...")
 

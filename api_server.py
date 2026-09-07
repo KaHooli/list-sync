@@ -42,8 +42,16 @@ from list_sync.database import (
     save_list_id,
     delete_list,
     update_list_user_id,
+    update_list_book_format,
     DB_FILE,
     init_database
+)
+from list_sync.books import (
+    BOOK_FORMATS,
+    BOOK_PROVIDERS,
+    DEFAULT_BOOK_FORMAT,
+    is_book_provider,
+    normalize_book_format,
 )
 from list_sync.config import load_env_config
 # Removed in-memory sync tracker - now using database-based tracking
@@ -58,6 +66,12 @@ from list_sync.utils.timezone_utils import (
 
 # Global variable to track server start time
 SERVER_START_TIME = None
+
+# What the connected Seerr can request, and when that was last checked. Probing
+# costs a round trip to Seerr, and the answer only changes when someone
+# reconfigures that server, so it is worth holding briefly.
+_capabilities_cache = None
+CAPABILITIES_TTL_SECONDS = 300
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -129,6 +143,11 @@ class ListAdd(BaseModel):
     list_type: str
     list_id: str
     user_id: str = "1"
+    # Only meaningful for book lists: "ebook", "audiobook" or "both"
+    book_format: Optional[str] = None
+
+class ListBookFormatUpdate(BaseModel):
+    book_format: str
 
 class ListUserUpdate(BaseModel):
     user_id: str
@@ -399,6 +418,12 @@ def normalize_list_id(list_type: str, list_id: str) -> str:
         if match:
             return match.group(1)
     
+    elif list_type_lower in ('goodreads', 'openlibrary'):
+        # Book lists have their own canonical forms ("19281606:to-read",
+        # "jane/OL123L"); the core reducer is the one that knows them.
+        from list_sync.database import normalize_list_id as canonical_list_id
+        return canonical_list_id(list_type, list_id)
+
     elif list_type_lower == 'letterboxd':
         # Letterboxd URLs: https://letterboxd.com/username/list/listname/
         # NOTE: Letterboxd stores the full URL in the database, so return as-is
@@ -2617,6 +2642,8 @@ async def save_step3_content_sources(data: dict):
         - tmdb_lists: str
         - tvdb_lists: str
         - simkl_lists: str
+        - goodreads_lists: str (books; only usable on a Seerr build with book support)
+        - openlibrary_lists: str (books; only usable on a Seerr build with book support)
     """
     try:
         from list_sync.config import ConfigManager
@@ -2629,7 +2656,7 @@ async def save_step3_content_sources(data: dict):
         list_fields = [
             'imdb_lists', 'trakt_lists', 'trakt_special_lists', 'letterboxd_lists',
             'anilist_lists', 'mdblist_lists', 'stevenlu_lists', 'tmdb_lists',
-            'tvdb_lists', 'simkl_lists'
+            'tvdb_lists', 'simkl_lists', 'goodreads_lists', 'openlibrary_lists'
         ]
         
         has_any_list = any(data.get(field, '').strip() for field in list_fields)
@@ -2655,6 +2682,10 @@ async def save_step3_content_sources(data: dict):
         # Save TMDB API key if provided
         if tmdb_key := data.get('tmdb_key', '').strip():
             config.save_setting('tmdb_key', tmdb_key)
+
+        # Save the format book lists request when their entry doesn't name one
+        if book_format := str(data.get('book_format', '') or '').strip():
+            config.save_setting('book_format', normalize_book_format(book_format))
         
         # Save special items limit
         trakt_limit = data.get('trakt_special_items_limit', 20)
@@ -3074,6 +3105,75 @@ async def get_recent_activity_from_docker(limit: int = Query(10, ge=1, le=100)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _seerr_capabilities(refresh: bool = False) -> Dict[str, Any]:
+    """
+    Ask the configured Seerr server what it can request.
+
+    Book support only exists on some Seerr builds (SeerrNG), so the UI has to
+    be told whether to offer book lists at all rather than assuming.
+
+    Args:
+        refresh (bool): Re-probe instead of answering from the short-lived cache
+
+    Returns:
+        Dict[str, Any]: {"books": {supported, ebook, audiobook, known, reason}}
+    """
+    global _capabilities_cache
+
+    now = time.time()
+    if not refresh and _capabilities_cache and now - _capabilities_cache[0] < CAPABILITIES_TTL_SECONDS:
+        return _capabilities_cache[1]
+
+    unknown = {
+        "books": {
+            "supported": False, "ebook": False, "audiobook": False, "known": False,
+            "reason": "Seerr is not configured yet, so book support is unknown.",
+        }
+    }
+
+    try:
+        seerr_url, seerr_api_key, _, _, _, _ = load_env_config()
+        if not seerr_url or not seerr_api_key:
+            return unknown
+
+        from list_sync.api.seerr import SeerrClient
+        capabilities = SeerrClient(seerr_url, seerr_api_key).get_capabilities()
+    except Exception as e:
+        logging.warning(f"Could not determine Seerr capabilities: {e}")
+        return unknown
+
+    _capabilities_cache = (now, capabilities)
+    return capabilities
+
+
+@app.get("/api/system/capabilities")
+async def get_system_capabilities(refresh: bool = Query(False)):
+    """
+    Report which media types the connected Seerr server can request.
+
+    The UI uses this to decide whether to offer book lists: requesting books
+    needs a Seerr build that supports them (SeerrNG) with a Bookshelf service
+    configured, and offering the option without one would only produce lists
+    that fail on every sync.
+    """
+    capabilities = _seerr_capabilities(refresh=refresh)
+    books = capabilities["books"]
+    return {
+        "books": {
+            **books,
+            "formats": [
+                fmt for fmt, available in (
+                    ("ebook", books["ebook"]),
+                    ("audiobook", books["audiobook"]),
+                    ("both", books["ebook"] and books["audiobook"]),
+                ) if available
+            ],
+            "providers": list(BOOK_PROVIDERS),
+        },
+        "checked_at": datetime.now().isoformat(),
+    }
+
+
 @app.get("/api/lists")
 async def get_lists():
     """Get all configured lists"""
@@ -3148,7 +3248,10 @@ async def get_lists():
                 "user_id": list_item.get('user_id', '1'),  # Include user_id for per-list user assignment
                 # Resolve the name here so the UI can show who a list requests
                 # as even before the users store has loaded
-                "user_display_name": user_names.get(str(list_item.get('user_id', '1'))) or None
+                "user_display_name": user_names.get(str(list_item.get('user_id', '1'))) or None,
+                # Books are requested as ebooks, audiobooks or both; other
+                # list types carry no format and report null.
+                "book_format": list_item.get('book_format')
             })
         
         return {"lists": formatted_lists}
@@ -3266,6 +3369,51 @@ async def update_list_user_endpoint(list_type: str, list_id: str, payload: ListU
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.patch("/api/lists/{list_type}/{list_id:path}/book-format")
+async def update_list_book_format_endpoint(list_type: str, list_id: str, payload: ListBookFormatUpdate):
+    """Change which format a book list requests - uses :path for full URLs"""
+    try:
+        if not is_book_provider(list_type):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{list_type} lists hold movies or TV, not books"
+            )
+
+        requested = str(payload.book_format or "").strip().lower()
+        if requested not in BOOK_FORMATS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"book_format must be one of: {', '.join(BOOK_FORMATS)}"
+            )
+
+        books = _seerr_capabilities()["books"]
+        available = {
+            "ebook": books["ebook"],
+            "audiobook": books["audiobook"],
+            "both": books["ebook"] and books["audiobook"],
+        }
+        if not available[requested]:
+            raise HTTPException(status_code=400, detail=books["reason"])
+
+        if not update_list_book_format(list_type, list_id, requested):
+            raise HTTPException(
+                status_code=404,
+                detail=f"No {list_type} list found matching '{list_id}'"
+            )
+
+        return {
+            "success": True,
+            "list_type": list_type,
+            "list_id": list_id,
+            "book_format": requested,
+            "message": f"{list_type} list now requests {requested}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/lists")
 async def add_list(list_add: ListAdd):
     """Add new list with URL generation and auto-detection of special Trakt lists"""
@@ -3276,12 +3424,34 @@ async def add_list(list_add: ListAdd):
         list_type = list_add.list_type
         list_id = list_add.list_id
         user_id = str(list_add.user_id).strip() or "1"
+        book_format = None
 
         # Catch a bad requester here rather than at sync time, when it would
         # surface as a failure on every item in the list.
         validation_error = _validate_overseerr_user(user_id)
         if validation_error:
             raise HTTPException(status_code=400, detail=validation_error)
+
+        # A book list is only worth storing if the connected Seerr can request
+        # books - otherwise every sync of it would fail, item by item.
+        if is_book_provider(list_type):
+            books = _seerr_capabilities()["books"]
+            if not books["supported"]:
+                raise HTTPException(status_code=400, detail=books["reason"])
+
+            book_format = normalize_book_format(list_add.book_format, DEFAULT_BOOK_FORMAT)
+            available = {
+                "ebook": books["ebook"],
+                "audiobook": books["audiobook"],
+                "both": books["ebook"] and books["audiobook"],
+            }
+            if not available[book_format]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Seerr cannot request {book_format} - {books['reason']}"
+                    )
+                )
 
         # Auto-detect special Trakt lists (trending:movies, popular:shows, etc.)
         if list_type == "trakt" and ':' in list_id:
@@ -3296,15 +3466,17 @@ async def add_list(list_add: ListAdd):
         list_url = construct_list_url(list_type, list_id)
         
         # Save with the generated URL, default item count of 0, and user_id
-        save_list_id(list_id, list_type, list_url, item_count=0, user_id=user_id)
-        
+        save_list_id(list_id, list_type, list_url, item_count=0, user_id=user_id,
+                     book_format=book_format)
+
         return {
             "success": True,
             "message": f"Added {list_type} list: {list_id}",
             "list_url": list_url,
             "item_count": 0,
             "user_id": user_id,
-            "user_display_name": _describe_overseerr_user(user_id)
+            "user_display_name": _describe_overseerr_user(user_id),
+            "book_format": book_format
         }
     except HTTPException:
         raise
@@ -3526,6 +3698,7 @@ async def get_enriched_items(
         item_ids = [item[0] for item in page_items]
         tmdb_id_map = {}
         poster_url_map = {}
+        external_id_map = {}
         item_lists_map = {}  # Map item_id to list of lists it belongs to
 
         try:
@@ -3534,9 +3707,15 @@ async def get_enriched_items(
                 placeholders = ','.join('?' * len(item_ids))
                 
                 # Fetch tmdb_ids and poster URLs
-                cursor.execute(f"SELECT id, tmdb_id, poster_url FROM synced_items WHERE id IN ({placeholders})", item_ids)
+                cursor.execute(
+                    f"SELECT id, tmdb_id, poster_url, external_id FROM synced_items WHERE id IN ({placeholders})",
+                    item_ids
+                )
                 for row in cursor.fetchall():
-                    item_db_id, tmdb_id, poster_url = row
+                    item_db_id, tmdb_id, poster_url, external_id = row
+                    # Books are identified by an Open Library work ID, which is
+                    # what a link back into Seerr needs instead of a TMDB ID.
+                    external_id_map[item_db_id] = external_id
                     if tmdb_id:
                         try:
                             # Handle both string and int tmdb_ids
@@ -3629,7 +3808,11 @@ async def get_enriched_items(
             }
             
             # Construct Seerr URL if available
-            if overseerr_id and seerr_url:
+            if media_type == "book":
+                book_id = external_id_map.get(item_id)
+                if book_id and seerr_url:
+                    enriched_item["overseerr_url"] = f"{seerr_url.rstrip('/')}/book/{book_id}"
+            elif overseerr_id and seerr_url:
                 media_type_path = "tv" if media_type == "tv" else "movie"
                 enriched_item["overseerr_url"] = f"{seerr_url.rstrip('/')}/{media_type_path}/{overseerr_id}"
             
@@ -6855,6 +7038,9 @@ async def get_settings():
         tmdb_lists = get_setting_safe('tmdb_lists', '')
         tvdb_lists = get_setting_safe('tvdb_lists', '')
         simkl_lists = get_setting_safe('simkl_lists', '')
+        goodreads_lists = get_setting_safe('goodreads_lists', '')
+        openlibrary_lists = get_setting_safe('openlibrary_lists', '')
+        book_format = normalize_book_format(get_setting_safe('book_format', ''), DEFAULT_BOOK_FORMAT)
         
         return {
             # Seerr Configuration
@@ -6893,6 +7079,9 @@ async def get_settings():
             "tmdb_lists": tmdb_lists,
             "tvdb_lists": tvdb_lists,
             "simkl_lists": simkl_lists,
+            "goodreads_lists": goodreads_lists,
+            "openlibrary_lists": openlibrary_lists,
+            "book_format": book_format,
         }
     except Exception as e:
         logging.error(f"Error loading settings: {e}")
@@ -6933,6 +7122,9 @@ async def get_settings():
             "tmdb_lists": '',
             "tvdb_lists": '',
             "simkl_lists": '',
+            "goodreads_lists": '',
+            "openlibrary_lists": '',
+            "book_format": DEFAULT_BOOK_FORMAT,
         }
 
 @app.post("/api/settings/config")

@@ -13,8 +13,10 @@ from typing import Optional, Tuple
 import requests
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
+
 from halo import Halo
 
+from .books import BOOK_FORMATS, DEFAULT_BOOK_FORMAT, is_book_provider, normalize_book_format
 from .utils.helpers import custom_input, color_gradient
 from .utils.logger import DATA_DIR
 
@@ -456,6 +458,42 @@ def parse_list_entry(raw_entry: str) -> Tuple[str, Optional[str]]:
     return entry, None
 
 
+# Separator between a book list and the format it should request, in the
+# *_LISTS environment variables ("19281606:to-read|audiobook::7"). A pipe,
+# because a colon already separates the shelf from the user ID.
+BOOK_FORMAT_SEPARATOR = "|"
+
+
+def parse_book_list_entry(raw_entry: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """
+    Split one entry of a book *_LISTS variable into list, user and format.
+
+    Entries build on the ordinary "list::user" form with an optional format:
+      19281606                      - the configured default format, default user
+      19281606:to-read|audiobook    - audiobooks from the "to-read" shelf
+      19281606:to-read|both::7      - both formats, requested as Seerr user 7
+
+    Args:
+        raw_entry (str): One comma-separated entry from a book *_LISTS variable
+
+    Returns:
+        Tuple[str, Optional[str], Optional[str]]: (list ID, user ID or None,
+            book format or None if unspecified)
+    """
+    list_id, user_id = parse_list_entry(raw_entry)
+    if BOOK_FORMAT_SEPARATOR not in list_id:
+        return list_id, user_id, None
+
+    list_part, _, format_part = list_id.rpartition(BOOK_FORMAT_SEPARATOR)
+    format_part = format_part.strip().lower()
+    # Only treat the tail as a format if it is one, so a pipe in a list name
+    # doesn't silently truncate the list.
+    if list_part.strip() and format_part in BOOK_FORMATS:
+        return list_part.strip(), user_id, format_part
+
+    return list_id, user_id, None
+
+
 def load_env_lists() -> bool:
     """
     Load lists from database configuration or environment variables and add them to the database.
@@ -493,17 +531,30 @@ def load_env_lists() -> bool:
 
         logging.info(f"Found {len(existing_lists)} existing lists in database")
 
+        # Book lists request this format unless their entry names one.
+        default_book_format = normalize_book_format(
+            get_list_setting('book_format'), DEFAULT_BOOK_FORMAT
+        )
+
         # Helper function to add list if it doesn't exist
-        def add_list_if_new(list_id: str, list_type: str, user_id: Optional[str] = None):
+        def add_list_if_new(list_id: str, list_type: str, user_id: Optional[str] = None,
+                            book_format: Optional[str] = None):
             nonlocal lists_added
             requester = user_id or default_user_id
+            requested_format = (
+                normalize_book_format(book_format, default_book_format)
+                if is_book_provider(list_type) else None
+            )
             if (list_type, normalize_list_id(list_type, list_id)) not in existing_set:
-                save_list_id(list_id, list_type, user_id=requester)
+                save_list_id(list_id, list_type, user_id=requester, book_format=requested_format)
                 lists_added = True
                 as_user = f" (requests as user {requester})" if requester else ""
-                logging.info(f"Added new {list_type.upper()} list: {list_id}{as_user}")
-                print(f"✅ Added new {list_type.upper()} list: {list_id}{as_user}")
-            elif user_id:
+                as_format = f" [{requested_format}]" if requested_format else ""
+                logging.info(f"Added new {list_type.upper()} list: {list_id}{as_user}{as_format}")
+                print(f"✅ Added new {list_type.upper()} list: {list_id}{as_user}{as_format}")
+                return
+
+            if user_id:
                 # The entry names a user explicitly, so keep the stored list in
                 # step with the configuration file it came from.
                 from .database import get_list_user_id, update_list_user_id
@@ -511,8 +562,22 @@ def load_env_lists() -> bool:
                 if current != str(user_id):
                     update_list_user_id(list_type, list_id, user_id)
                     print(f"🔄 {list_type.upper()} list {list_id} now requests as user {user_id}")
-            else:
+
+            if book_format and is_book_provider(list_type):
+                from .database import get_list_book_format, update_list_book_format
+                if get_list_book_format(list_type, list_id) != requested_format:
+                    update_list_book_format(list_type, list_id, requested_format)
+                    print(f"🔄 {list_type.upper()} list {list_id} now requests {requested_format}")
+
+            if not user_id and not book_format:
                 logging.info(f"Skipping existing {list_type.upper()} list: {list_id}")
+
+        def add_book_lists_from_setting(setting_value: str, list_type: str):
+            """Add every entry of a book *_LISTS setting, format included."""
+            for raw_entry in setting_value.split(','):
+                list_id, user_id, book_format = parse_book_list_entry(raw_entry)
+                if list_id:
+                    add_list_if_new(list_id, list_type, user_id, book_format)
 
         def add_lists_from_setting(setting_value: str, list_type: str):
             """Add every comma-separated entry of a *_LISTS setting."""
@@ -591,6 +656,14 @@ def load_env_lists() -> bool:
         # Process TVDB lists
         if tvdb_lists := get_list_setting('tvdb_lists'):
             add_lists_from_setting(tvdb_lists, "tvdb")
+
+        # Process book lists. These are only requestable against a Seerr build
+        # with book support; the sync says so plainly if this one hasn't.
+        if goodreads_lists := get_list_setting('goodreads_lists'):
+            add_book_lists_from_setting(goodreads_lists, "goodreads")
+
+        if openlibrary_lists := get_list_setting('openlibrary_lists'):
+            add_book_lists_from_setting(openlibrary_lists, "openlibrary")
 
         if lists_added:
             logging.info(f"Environment sync complete: {len([l for l in existing_lists])} existing + {sum(1 for _ in [True for _ in range(len(load_list_ids()) - len(existing_lists))])} new lists")
@@ -853,6 +926,9 @@ class ConfigManager:
             'tmdb_lists': os.getenv('TMDB_LISTS', ''),
             'tvdb_lists': os.getenv('TVDB_LISTS', ''),
             'simkl_lists': os.getenv('SIMKL_LISTS', ''),
+            'goodreads_lists': os.getenv('GOODREADS_LISTS', ''),
+            'openlibrary_lists': os.getenv('OPENLIBRARY_LISTS', ''),
+            'book_format': os.getenv('BOOK_FORMAT', ''),
         }
         
         # Save all settings

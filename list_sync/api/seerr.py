@@ -4,10 +4,20 @@ Seerr API client for the ListSync application.
 
 import json
 import logging
+import re
 import requests
 from typing import Dict, Any, Tuple, Optional
 from urllib.parse import quote
 
+from ..books import (  # noqa: F401  (re-exported for callers of this module)
+    BOOK_FORMAT_AUDIOBOOK,
+    BOOK_FORMAT_BOTH,
+    BOOK_FORMAT_EBOOK,
+    BOOK_FORMAT_OVERLAP,
+    BOOK_FORMATS,
+    DEFAULT_BOOK_FORMAT,
+    normalize_book_format,
+)
 from ..utils.helpers import calculate_title_similarity, custom_input, color_gradient
 
 # Seerr permission bits (server/lib/permissions.ts).
@@ -36,6 +46,7 @@ class SeerrClient:
         self.headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
         self.request_headers = {"X-Api-Key": api_key, "X-Api-User": requester_user_id, "Content-Type": "application/json"}
         self._users_cache = None
+        self._capabilities = None
 
     def _headers_for_user(self, requester_user_id: Optional[str] = None) -> Dict[str, str]:
         """
@@ -670,5 +681,422 @@ class SeerrClient:
         return self._submit_request(
             payload,
             f"Season {season_number} of TV series ID {tv_id}",
+            requester_user_id
+        )
+
+    # ------------------------------------------------------------------
+    # Books
+    #
+    # Book support is not part of Overseerr or Jellyseerr - it arrived with
+    # SeerrNG, which requests books through a Readarr-compatible "Bookshelf"
+    # service (Chaptarr). Everything below therefore probes for the feature
+    # before using it, so a list-sync pointed at a bookless server degrades to
+    # a clear message instead of a wall of 404s.
+    # ------------------------------------------------------------------
+
+    def get_capabilities(self, refresh: bool = False) -> Dict[str, Any]:
+        """
+        Discover which media types the connected Seerr can actually request.
+
+        Args:
+            refresh (bool): Re-probe instead of reusing the cached answer. The
+                answer only changes when the server is reconfigured, so a sync
+                probes once and reuses it for every list.
+
+        Returns:
+            Dict[str, Any]: {"books": {supported, ebook, audiobook, known, reason}}
+        """
+        if self._capabilities is not None and not refresh:
+            return self._capabilities
+
+        self._capabilities = {"books": self._probe_book_support()}
+        return self._capabilities
+
+    def supports_books(self, refresh: bool = False) -> bool:
+        """
+        Whether this server has book support at all (i.e. is a SeerrNG build).
+
+        Returns:
+            bool: True when book endpoints exist on the connected server
+        """
+        return bool(self.get_capabilities(refresh)["books"]["supported"])
+
+    def _probe_book_support(self) -> Dict[str, Any]:
+        """
+        Ask the server about its Bookshelf services to settle three questions
+        at once: does this build know about books, is a service configured, and
+        which formats can be requested.
+
+        The Bookshelf settings endpoint is the cheapest honest probe - it is
+        served by the app itself, unlike /book/search which would go out to
+        Open Library just to tell us the route exists.
+
+        Returns:
+            Dict[str, Any]: supported/ebook/audiobook flags, whether the answer
+                is trustworthy ("known"), and a human-readable reason
+        """
+        no_books = {"supported": False, "ebook": False, "audiobook": False}
+        url = f"{self.seerr_url}/api/v1/settings/readarr"
+
+        try:
+            response = requests.get(url, headers=self.headers, timeout=15)
+        except requests.exceptions.RequestException as e:
+            return {
+                **no_books,
+                "known": False,
+                "reason": f"Could not reach {self.seerr_url} to check for book support: {e}",
+            }
+
+        if response.status_code in (404, 405):
+            return {
+                **no_books,
+                "known": True,
+                "reason": (
+                    "This Seerr server has no book support. Book lists need a build that "
+                    "can request books, such as SeerrNG with a Chaptarr/Readarr-compatible "
+                    "Bookshelf service."
+                ),
+            }
+
+        if response.status_code in (401, 403):
+            return {
+                **no_books,
+                "known": False,
+                "reason": (
+                    f"Seerr rejected the API key when checking for book support "
+                    f"(HTTP {response.status_code}). Book lists stay hidden until a key "
+                    f"with admin access is configured."
+                ),
+            }
+
+        if response.status_code >= 400:
+            return {
+                **no_books,
+                "known": False,
+                "reason": f"Unexpected HTTP {response.status_code} while checking for book support.",
+            }
+
+        try:
+            services = response.json()
+        except ValueError:
+            return {
+                **no_books,
+                "known": False,
+                "reason": "Seerr returned a non-JSON answer when checking for book support.",
+            }
+
+        if not isinstance(services, list):
+            return {
+                **no_books,
+                "known": False,
+                "reason": "Seerr returned an unexpected Bookshelf settings payload.",
+            }
+
+        # SeerrNG only accepts a request for a format that has a *default*
+        # server of that kind, so that - not merely "a server exists" - is what
+        # decides which formats we may offer.
+        has_ebook = any(
+            service.get("isDefault") and (service.get("serviceType") or BOOK_FORMAT_EBOOK) == BOOK_FORMAT_EBOOK
+            for service in services if isinstance(service, dict)
+        )
+        has_audiobook = any(
+            service.get("isDefault") and service.get("serviceType") == BOOK_FORMAT_AUDIOBOOK
+            for service in services if isinstance(service, dict)
+        )
+
+        if has_ebook and has_audiobook:
+            reason = "Book requests are available for ebooks and audiobooks."
+        elif has_ebook:
+            reason = "Book requests are available for ebooks only (no default audiobook Bookshelf server)."
+        elif has_audiobook:
+            reason = "Book requests are available for audiobooks only (no default ebook Bookshelf server)."
+        else:
+            reason = (
+                "This Seerr server supports books, but no default Bookshelf server is "
+                "configured, so book requests would be rejected. Set one under "
+                "Settings → Services in Seerr."
+            )
+
+        return {
+            "supported": True,
+            "ebook": has_ebook,
+            "audiobook": has_audiobook,
+            "known": True,
+            "reason": reason,
+        }
+
+    def get_book(self, book_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Look a book up directly by its Open Library work ID.
+
+        Args:
+            book_id (str): Open Library work ID (e.g. "OL27448W")
+
+        Returns:
+            Optional[Dict[str, Any]]: Book details, or None if not found
+        """
+        book_id = str(book_id or "").strip()
+        if not book_id:
+            return None
+
+        book_url = f"{self.seerr_url}/api/v1/book/{quote(book_id, safe='')}"
+        try:
+            logging.info(f"📚 Seerr API: Direct lookup by Open Library ID: {book_id}")
+            response = requests.get(book_url, headers=self.headers, timeout=20)
+
+            if response.status_code == 404:
+                logging.info(f"❌ Seerr API: Open Library ID {book_id} not found")
+                return None
+
+            response.raise_for_status()
+            return self._as_book_result(response.json())
+        except requests.exceptions.RequestException as e:
+            logging.error(f"❌ Seerr API error for Open Library ID {book_id}: {str(e)}")
+            return None
+
+    @staticmethod
+    def _as_book_result(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalise a Seerr book payload into the fields a request needs."""
+        if not isinstance(data, dict) or not data.get("id"):
+            return None
+        return {
+            "id": str(data.get("id")),
+            "title": data.get("title"),
+            "author": data.get("author"),
+            "author_id": data.get("authorId"),
+            "year": data.get("firstPublishYear"),
+            "isbn13": data.get("isbn13"),
+            "edition_id": data.get("editionId"),
+            "media_info": data.get("mediaInfo") or {},
+        }
+
+    def search_book(self, title: str, author: Optional[str] = None,
+                    year: Optional[int] = None, isbn: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Find a book on the connected Seerr server.
+
+        Open Library's search is passed through verbatim by Seerr, so an ISBN
+        can be matched exactly with a field query before falling back to the
+        fuzzy title/author match that a Goodreads shelf usually needs.
+
+        Args:
+            title (str): Book title
+            author (Optional[str]): Author name, used both to narrow the query
+                and to score candidates
+            year (Optional[int]): First publication year, used for scoring
+            isbn (Optional[str]): ISBN-10/13 from the source list, if any
+
+        Returns:
+            Optional[Dict[str, Any]]: Best matching book, or None
+        """
+        if isbn:
+            digits = re.sub(r"[^0-9Xx]", "", str(isbn))
+            if digits:
+                exact = self._book_search_request(f"isbn:{digits}")
+                if exact:
+                    # An ISBN identifies one edition, so the top hit is the book.
+                    logging.info(f"✅ Seerr API: Matched '{title}' by ISBN {digits}")
+                    return self._as_book_result(exact[0])
+
+        query = f"{title} {author}".strip() if author else str(title or "").strip()
+        if not query:
+            return None
+
+        results = self._book_search_request(query)
+        if not results:
+            logging.warning(f'❌ Seerr API: No book results for "{title}" by {author or "unknown author"}')
+            return None
+
+        best, best_score = None, 0.0
+        for result in results:
+            if not isinstance(result, dict) or not result.get("id"):
+                continue
+
+            candidate_title = result.get("title") or ""
+            score = calculate_title_similarity(title, candidate_title)
+
+            candidate_author = result.get("author") or ""
+            if author and candidate_author:
+                author_similarity = calculate_title_similarity(author, candidate_author)
+                # The author is the strongest signal a shelf gives us: two books
+                # share a title far more often than they share title and author.
+                # The middle band leaves room for the same person spelled
+                # differently ("J.R.R. Tolkien" / "John Ronald Reuel Tolkien").
+                if author_similarity >= 0.8:
+                    score *= 1.5
+                elif author_similarity < 0.5:
+                    score *= 0.5
+
+            candidate_year = result.get("firstPublishYear")
+            if year and candidate_year:
+                try:
+                    if abs(int(year) - int(candidate_year)) <= 1:
+                        score *= 1.2
+                except (TypeError, ValueError):
+                    pass
+
+            logging.debug(f"  📖 Candidate: '{candidate_title}' by {candidate_author} - Score: {score:.2f}")
+            if score > best_score:
+                best, best_score = result, score
+
+        # Below this the "match" is usually a different book by a similar name.
+        if not best or best_score < 0.6:
+            logging.warning(
+                f'❌ Seerr API: No confident book match for "{title}" by {author or "unknown author"} '
+                f'(best score {best_score:.2f})'
+            )
+            return None
+
+        logging.info(
+            f"✅ Seerr API: Matched '{title}' → '{best.get('title')}' by "
+            f"{best.get('author') or 'unknown author'} (score {best_score:.2f})"
+        )
+        return self._as_book_result(best)
+
+    def _book_search_request(self, query: str) -> list:
+        """Run one book search and return its raw results."""
+        search_url = f"{self.seerr_url}/api/v1/book/search"
+        try:
+            logging.info(f"🔍 Seerr API: Book search for '{query}'")
+            response = requests.get(
+                search_url,
+                headers=self.headers,
+                params={"query": query, "page": 1},
+                timeout=30
+            )
+
+            if response.status_code == 404:
+                logging.error(
+                    "❌ Seerr API: /book/search is not available on this server. "
+                    "Book lists need a Seerr build with book support (SeerrNG)."
+                )
+                return []
+
+            response.raise_for_status()
+            results = response.json().get("results") or []
+            return results if isinstance(results, list) else []
+        except requests.exceptions.RequestException as e:
+            logging.error(f'❌ Seerr API: Book search failed for "{query}": {str(e)}')
+            return []
+
+    @staticmethod
+    def _extract_book_requesters(media_info: Dict[str, Any], book_format: str) -> set:
+        """
+        Collect the users whose open requests already cover this format.
+
+        Seerr only returns requests that are still pending or approved here, so
+        a declined or completed one correctly leaves the book requestable
+        again. A "both" request covers either single format, and is in turn
+        blocked by either - the same overlap Seerr enforces server-side.
+        """
+        overlapping = BOOK_FORMAT_OVERLAP.get(book_format, {book_format})
+        requester_ids = set()
+        for request in ((media_info or {}).get("requests") or []):
+            if not isinstance(request, dict):
+                continue
+            stored_format = normalize_book_format(request.get("bookFormat"), BOOK_FORMAT_EBOOK)
+            if stored_format not in overlapping:
+                continue
+            requested_by = request.get("requestedBy") or {}
+            user_id = requested_by.get("id") if isinstance(requested_by, dict) else None
+            requester_ids.add(str(user_id) if user_id is not None else "unknown")
+        return requester_ids
+
+    @staticmethod
+    def book_state_from_media_info(media_info: Optional[Dict[str, Any]],
+                                   book_format: str = BOOK_FORMAT_EBOOK) -> Dict[str, Any]:
+        """
+        Work out what still needs requesting for one book, in one format.
+
+        A book is "available" per format: Seerr links the ebook and the
+        audiobook to their own Bookshelf service, so a shelf synced as
+        audiobooks should still be requested when only the ebook is on hand.
+
+        Args:
+            media_info (Optional[Dict[str, Any]]): mediaInfo from a book payload
+            book_format (str): Format this list asks for
+
+        Returns:
+            Dict[str, Any]: is_available, is_requested, is_blocklisted and
+                requested_by_user_ids
+        """
+        media_info = media_info or {}
+        book_format = normalize_book_format(book_format)
+
+        has_ebook = media_info.get("externalServiceId") is not None
+        has_audiobook = media_info.get("audiobookExternalServiceId") is not None
+        if book_format == BOOK_FORMAT_EBOOK:
+            is_available = has_ebook
+        elif book_format == BOOK_FORMAT_AUDIOBOOK:
+            is_available = has_audiobook
+        else:
+            # Seerr refuses a "both" request as soon as either half is covered.
+            is_available = has_ebook or has_audiobook
+
+        requested_by = SeerrClient._extract_book_requesters(media_info, book_format)
+
+        return {
+            "is_available": is_available,
+            "is_requested": bool(requested_by),
+            # MediaStatus.BLOCKLISTED (6) - Seerr will refuse the request.
+            "is_blocklisted": media_info.get("status") == 6,
+            "requested_by_user_ids": requested_by,
+        }
+
+    def get_book_state(self, book_id: str, book_format: str = BOOK_FORMAT_EBOOK) -> Dict[str, Any]:
+        """
+        Fetch a book and report what still needs requesting for one format.
+
+        Args:
+            book_id (str): Open Library work ID
+            book_format (str): Format this list asks for
+
+        Returns:
+            Dict[str, Any]: Same shape as book_state_from_media_info()
+        """
+        book = self.get_book(book_id)
+        return self.book_state_from_media_info((book or {}).get("media_info"), book_format)
+
+    def request_book(self, book_id: str, book_format: str = BOOK_FORMAT_EBOOK,
+                     edition_id: Optional[str] = None, author_id: Optional[str] = None,
+                     isbn13: Optional[str] = None,
+                     requester_user_id: Optional[str] = None) -> str:
+        """
+        Request a book in Seerr as a specific user.
+
+        Args:
+            book_id (str): Open Library work ID (e.g. "OL27448W")
+            book_format (str): "ebook", "audiobook" or "both"
+            edition_id (Optional[str]): Open Library edition ID, when known
+            author_id (Optional[str]): Open Library author ID, when known
+            isbn13 (Optional[str]): ISBN-13 of the matched edition, when known
+            requester_user_id (Optional[str]): Seerr user to request as
+
+        Returns:
+            str: "success", "already_requested", or "error"
+        """
+        book_id = str(book_id or "").strip()
+        if not book_id:
+            logging.error("Cannot request a book without an Open Library ID")
+            return "error"
+
+        book_format = normalize_book_format(book_format)
+        payload: Dict[str, Any] = {
+            "mediaType": "book",
+            "mediaId": book_id,
+            "format": book_format,
+        }
+        # Seerr matches an existing library row on any of these, so passing the
+        # ones the list gave us keeps a request from creating a duplicate book.
+        if edition_id:
+            payload["editionId"] = str(edition_id)
+        if author_id:
+            payload["authorId"] = str(author_id)
+        if isbn13:
+            payload["isbn13"] = str(isbn13)
+
+        return self._submit_request(
+            payload,
+            f"book {book_id} ({book_format})",
             requester_user_id
         )
