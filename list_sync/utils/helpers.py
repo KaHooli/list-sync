@@ -210,7 +210,7 @@ def construct_list_url(list_type: str, list_id: str) -> str:
     Construct the full URL for a list based on its type and ID.
     
     Args:
-        list_type (str): Type of list (imdb, trakt, trakt_special, letterboxd, anilist, mdblist, stevenlu, tmdb, simkl, tvdb)
+        list_type (str): Type of list (imdb, trakt, trakt_special, letterboxd, anilist, mdblist, stevenlu, tmdb, simkl, tvdb, goodreads, openlibrary)
         list_id (str): List ID or URL
         
     Returns:
@@ -340,6 +340,22 @@ def construct_list_url(list_type: str, list_id: str) -> str:
             # If it's already a URL, return as is
             return list_id
     
+    elif list_type.lower() == "goodreads":
+        # "19281606" or "19281606:to-read" - a user ID and, optionally, a shelf
+        user_id, _, shelf = list_id.partition(':')
+        shelf = shelf.strip() or "to-read"
+        return f"https://www.goodreads.com/review/list/{user_id.strip()}?shelf={shelf}"
+
+    elif list_type.lower() == "openlibrary":
+        # "jane/OL123L" for a list, "jane:want-to-read" for a reading log shelf
+        if '/' in list_id:
+            user, _, value = list_id.partition('/')
+            return f"https://openlibrary.org/people/{user.strip()}/lists/{value.strip()}"
+        user, _, shelf = list_id.partition(':')
+        if shelf.strip():
+            return f"https://openlibrary.org/people/{user.strip()}/books/{shelf.strip()}"
+        return f"https://openlibrary.org/people/{list_id.strip()}"
+
     elif list_type.lower() == "collections":
         # Collections don't have URLs, return a descriptive identifier
         return f"collection:{list_id}"

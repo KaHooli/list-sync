@@ -20,6 +20,8 @@ import type {
   CollectionPosterResponse,
   CollectionSyncResponse,
   OverseerrUser,
+  BookFormat,
+  SystemCapabilities,
 } from '~/types'
 
 export class ApiService {
@@ -66,6 +68,18 @@ export class ApiService {
     return this.request<SystemHealth>('/system/health')
   }
 
+  /**
+   * Ask which media types the connected Seerr server can request.
+   *
+   * Book lists are only offered when this reports book support: a Seerr
+   * without it would reject every book request such a list produced.
+   */
+  async getCapabilities(refresh = false): Promise<SystemCapabilities> {
+    return this.request<SystemCapabilities>(
+      `/system/capabilities${refresh ? '?refresh=true' : ''}`
+    )
+  }
+
   async getDataQuality() {
     return this.request('/stats/data-quality')
   }
@@ -98,6 +112,13 @@ export class ApiService {
       method: 'POST',
       body: list,
     })
+  }
+
+  async updateListBookFormat(listType: string, listId: string, bookFormat: BookFormat): Promise<void> {
+    return this.request<void>(
+      `/lists/${listType}/${encodeURIComponent(listId)}/book-format`,
+      { method: 'PATCH', body: { book_format: bookFormat } }
+    )
   }
 
   async deleteList(listType: string, listId: string): Promise<void> {

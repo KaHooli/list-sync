@@ -44,6 +44,7 @@ for DNS.
 | `test_settings_validation` | settings writes rejecting what the wizard rejects, masked values round-tripping, the Discord sink |
 | `test_config_encryption` | `config.enc` salt and key derivation, and files from before it still opening |
 | `test_image_sniff` | image type detection, cross-checked against `imghdr` where it still exists |
+| `test_books` | book-support probe, Goodreads/Open Library list IDs, per-format availability, request payloads |
 
 ## Adding one
 

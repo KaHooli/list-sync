@@ -3,7 +3,7 @@
  */
 
 import { defineStore } from 'pinia'
-import type { List, CreateListRequest } from '~/types'
+import type { BookFormat, List, CreateListRequest } from '~/types'
 
 export const useListsStore = defineStore('lists', {
   state: () => ({
@@ -202,6 +202,36 @@ export const useListsStore = defineStore('lists', {
     /**
      * Change which Seerr user a list requests as
      */
+    /**
+     * Change which format a book list requests (ebook, audiobook or both).
+     */
+    async updateListBookFormat(listType: string, listId: string, bookFormat: BookFormat) {
+      this.error = null
+
+      const list = this.lists.find(
+        (l) => l.list_type === listType && l.list_id === listId
+      )
+      const previousFormat = list?.book_format
+
+      // Update optimistically so the badge reacts immediately, and roll back
+      // if the server rejects the change.
+      if (list) {
+        list.book_format = bookFormat
+      }
+
+      try {
+        await useApiService().updateListBookFormat(listType, listId, bookFormat)
+        return { success: true }
+      } catch (err: any) {
+        if (list) {
+          list.book_format = previousFormat
+        }
+        this.error = err.message || 'Failed to change the book format'
+        console.error('Error updating book format:', err)
+        throw err
+      }
+    },
+
     async updateListUser(listType: string, listId: string, userId: string) {
       this.error = null
 

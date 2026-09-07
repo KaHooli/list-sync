@@ -70,6 +70,7 @@ import {
   Film as FilmIcon,
   Tv as TvIcon,
   Database as DatabaseIcon,
+  Book as BookIcon,
 } from 'lucide-vue-next'
 
 const listsStore = useListsStore()
@@ -96,6 +97,8 @@ const sources = [
   { label: 'TMDB', value: 'tmdb', icon: FilmIcon },
   { label: 'Simkl', value: 'simkl', icon: TvIcon },
   { label: 'TVDB', value: 'tvdb', icon: TvIcon },
+  { label: 'Goodreads', value: 'goodreads', icon: BookIcon },
+  { label: 'Open Library', value: 'openlibrary', icon: BookIcon },
 ]
 
 // Handlers

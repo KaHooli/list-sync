@@ -77,6 +77,31 @@
             </select>
           </div>
         </Tooltip>
+
+        <!-- Book Format Badge - books are requested as ebooks, audiobooks or
+             both, and the badge doubles as the control for switching -->
+        <Tooltip v-if="list.book_format" :content="`Requests ${currentFormatLabel} — click to change`">
+          <div
+            class="relative flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium bg-green-500/10 border border-green-500/30 text-green-300 transition-colors hover:border-green-400/60 hover:bg-green-500/20"
+            :class="{ 'opacity-60': isUpdatingFormat }"
+            @click.stop
+          >
+            <component :is="BookIcon" :size="12" />
+            <span>{{ currentFormatLabel }}</span>
+            <select
+              :value="list.book_format"
+              :disabled="isUpdatingFormat"
+              aria-label="Format this book list requests"
+              class="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+              @click.stop
+              @change="handleBookFormatChange"
+            >
+              <option v-for="(label, value) in bookFormatLabels" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+          </div>
+        </Tooltip>
       </div>
 
       <!-- Stats -->
@@ -186,8 +211,10 @@ import {
   XCircle as XCircleIcon,
   AlertCircle as AlertCircleIcon,
   User as UserIcon,
+  Book as BookIcon,
+  Library as LibraryIcon,
 } from 'lucide-vue-next'
-import type { List } from '~/types'
+import type { BookFormat, List } from '~/types'
 import { extractUrlSegment } from '~/utils/urlHelpers'
 import { formatNumber, formatDate } from '~/utils/formatters'
 import { useUsersStore } from '~/stores/users'
@@ -220,6 +247,7 @@ const listsStore = useListsStore()
 // State
 const isSyncing = ref(false)
 const isUpdatingUser = ref(false)
+const isUpdatingFormat = ref(false)
 
 // Get user info for this list
 const getUserInfo = () => {
@@ -250,6 +278,25 @@ const handleUserChange = async (event: Event) => {
     showError('Update Failed', err?.message || `Could not change the requester from ${previousLabel}`)
   } finally {
     isUpdatingUser.value = false
+  }
+}
+
+const currentFormatLabel = computed(() =>
+  bookFormatLabels[props.list.book_format || 'ebook'] || props.list.book_format || ''
+)
+
+const handleBookFormatChange = async (event: Event) => {
+  const newFormat = (event.target as HTMLSelectElement).value as BookFormat
+  if (!newFormat || newFormat === props.list.book_format) return
+
+  isUpdatingFormat.value = true
+  try {
+    await listsStore.updateListBookFormat(props.list.list_type, props.list.list_id, newFormat)
+    showSuccess('Format Updated', `${getDisplayTitle()} now requests ${bookFormatLabels[newFormat]}`)
+  } catch (err: any) {
+    showError('Update Failed', err?.message || 'Could not change the book format')
+  } finally {
+    isUpdatingFormat.value = false
   }
 }
 
@@ -395,7 +442,32 @@ const sources = [
     borderColor: 'border-amber-500/40',
     description: 'Anime tracking platform'
   },
+  { 
+    label: 'Goodreads', 
+    value: 'goodreads', 
+    icon: BookIcon, 
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-500/20',
+    borderColor: 'border-orange-500/40',
+    description: 'Book shelves'
+  },
+  { 
+    label: 'Open Library', 
+    value: 'openlibrary', 
+    icon: LibraryIcon, 
+    color: 'text-teal-400',
+    bgColor: 'bg-teal-500/20',
+    borderColor: 'border-teal-500/40',
+    description: 'Book lists and reading logs'
+  },
 ]
+
+// How a book list's format reads on the card, matching the Seerr wording.
+const bookFormatLabels: Record<string, string> = {
+  ebook: 'eBooks',
+  audiobook: 'Audiobooks',
+  both: 'Audiobooks + eBooks',
+}
 
 // Get source icon
 const getSourceIcon = (source: string) => {

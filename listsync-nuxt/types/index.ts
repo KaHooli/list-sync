@@ -28,6 +28,29 @@ export interface List {
   last_synced?: string
   user_id?: string
   user_display_name?: string | null
+  /** Books only: which format this list requests. Null for movie/TV lists. */
+  book_format?: BookFormat | null
+}
+
+/** Formats a book list can request. Seerr tracks ebooks and audiobooks apart. */
+export type BookFormat = 'ebook' | 'audiobook' | 'both'
+
+/**
+ * What the connected Seerr server can request. Book support only exists on
+ * some builds (SeerrNG) with a Bookshelf service configured, so book lists are
+ * only offered when this says they will work.
+ */
+export interface SystemCapabilities {
+  books: {
+    supported: boolean
+    ebook: boolean
+    audiobook: boolean
+    known: boolean
+    reason: string
+    formats: BookFormat[]
+    providers: string[]
+  }
+  checked_at: string
 }
 
 export interface MediaItem {
@@ -69,8 +92,11 @@ export interface ConnectionStatus {
 
 export interface CreateListRequest {
   list_type: 'imdb' | 'trakt' | 'trakt_special' | 'letterboxd' | 'mdblist' | 'stevenlu' | 'tmdb' | 'simkl' | 'tvdb'
+    | 'anilist' | 'goodreads' | 'openlibrary'
   list_id: string
   user_id?: string
+  /** Books only: "ebook", "audiobook" or "both". Ignored for other list types. */
+  book_format?: BookFormat
 }
 
 export interface OverseerrUser {

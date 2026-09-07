@@ -54,7 +54,7 @@ export function formatListIdForDisplay(listId: string): string {
 /**
  * Construct the full URL for a list based on its type and ID.
  * This matches the Python construct_list_url function.
- * @param listType - Type of list (imdb, trakt, trakt_special, letterboxd, anilist, mdblist, stevenlu, tmdb, simkl, tvdb)
+ * @param listType - Type of list (imdb, trakt, trakt_special, letterboxd, anilist, mdblist, stevenlu, tmdb, simkl, tvdb, goodreads, openlibrary)
  * @param listId - List ID or URL
  * @returns Full URL for the list
  */
@@ -184,6 +184,25 @@ export function constructListUrl(listType: string, listId: string): string {
       return `https://www.thetvdb.com/lists/${listId}`
     }
     return listId
+  }
+
+  // Goodreads: "19281606" or "19281606:to-read"
+  if (type === 'goodreads') {
+    const [userId, shelf] = listId.split(':')
+    return `https://www.goodreads.com/review/list/${userId}?shelf=${shelf || 'to-read'}`
+  }
+
+  // Open Library: "jane/OL123L" for a list, "jane:want-to-read" for a shelf
+  if (type === 'openlibrary') {
+    if (listId.includes('/')) {
+      const [user, value] = listId.split('/')
+      return `https://openlibrary.org/people/${user}/lists/${value}`
+    }
+    if (listId.includes(':')) {
+      const [user, shelf] = listId.split(':')
+      return `https://openlibrary.org/people/${user}/books/${shelf}`
+    }
+    return `https://openlibrary.org/people/${listId}`
   }
 
   // Collections don't have URLs

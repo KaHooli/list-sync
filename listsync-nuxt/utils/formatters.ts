@@ -200,6 +200,9 @@ export function formatListSource(source: string | null | undefined): string {
     'tmdb': 'TMDB',
     'simkl': 'Simkl',
     'tvdb': 'TVDB',
+    'anilist': 'AniList',
+    'goodreads': 'Goodreads',
+    'openlibrary': 'Open Library',
   }
 
   return sources[source.toLowerCase()] || capitalize(source)

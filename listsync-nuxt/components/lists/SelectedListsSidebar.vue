@@ -37,7 +37,9 @@
         </div>
         <div class="flex-1 min-w-0 overflow-hidden">
           <p class="text-xs font-semibold text-foreground truncate">{{ list.displayName }}</p>
-          <p class="text-[10px] text-muted-foreground truncate">{{ formatSource(list.source || list.listType) }}</p>
+          <p class="text-[10px] text-muted-foreground truncate">
+            {{ formatSource(list.source || list.listType) }}<template v-if="list.bookFormat"> · {{ formatBookFormat(list.bookFormat) }}</template>
+          </p>
         </div>
         <button
           v-if="!list.isCurrent"
@@ -235,6 +237,8 @@ import {
   Zap as ZapIcon,
   Sparkles as SparklesIcon,
   AlertCircle as AlertCircleIcon,
+  Book as BookIcon,
+  Library as LibraryIcon,
 } from 'lucide-vue-next'
 
 interface ListItem {
@@ -244,6 +248,8 @@ interface ListItem {
   displayName: string
   listType?: string
   mediaType?: string
+  /** Books only: which format this list will request. */
+  bookFormat?: 'ebook' | 'audiobook' | 'both'
   isCurrent?: boolean
 }
 
@@ -355,7 +361,13 @@ const sourceConfig: Record<string, { icon: any; color: string; bg: string; label
   tmdb: { icon: GlobeIcon, color: 'text-cyan-400', bg: 'bg-cyan-500/20', label: 'TMDB' },
   tvdb: { icon: CalendarIcon, color: 'text-indigo-400', bg: 'bg-indigo-500/20', label: 'TVDB' },
   anilist: { icon: SparklesIcon, color: 'text-amber-400', bg: 'bg-amber-500/20', label: 'AniList' },
+  goodreads: { icon: BookIcon, color: 'text-orange-400', bg: 'bg-orange-500/20', label: 'Goodreads' },
+  openlibrary: { icon: LibraryIcon, color: 'text-teal-400', bg: 'bg-teal-500/20', label: 'Open Library' },
 }
+
+// Books are requested as ebooks, audiobooks or both, so the row says which.
+const formatBookFormat = (format: string) =>
+  ({ ebook: 'eBooks', audiobook: 'Audiobooks', both: 'Audiobooks + eBooks' } as Record<string, string>)[format] || format
 
 const getSourceIcon = (source: string) => {
   return sourceConfig[source]?.icon || DatabaseIcon

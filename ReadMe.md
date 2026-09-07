@@ -429,6 +429,82 @@ To enable this list, simply add the below variable:
 This will be recognized as the Steven Lu Popular Movies list.
 </details>
 
+<details>
+<summary>📚 Goodreads (books)</summary>
+
+**Requires a Seerr build that can request books** - see [Book Lists](#-book-lists) below. ListSync
+hides these providers when the connected server has no book support.
+
+#### **Using Your Goodreads User ID**:
+1. Open your Goodreads profile. The URL looks like
+   `https://www.goodreads.com/user/show/19281606-jane`.
+2. Use the numeric part: `19281606`. The `to-read` shelf is synced by default.
+3. To sync a different shelf, add it after a colon: `19281606:read`,
+   `19281606:science-fiction`.
+
+#### **Using the Raw URL**:
+- `https://www.goodreads.com/review/list/19281606?shelf=to-read`
+
+**Note**: Goodreads shelves must be public - ListSync reads the shelf's RSS feed, which
+Goodreads only serves for public profiles. Books are matched to Open Library by ISBN where
+the shelf has one, and by title and author otherwise.
+</details>
+
+<details>
+<summary>📚 Open Library (books)</summary>
+
+**Requires a Seerr build that can request books** - see [Book Lists](#-book-lists) below.
+
+#### **Using an Open Library List**:
+1. Open the list in your browser: `https://openlibrary.org/people/jane/lists/OL123L`.
+2. Paste that URL, or use the short form `jane/OL123L`.
+
+#### **Using a Reading Log Shelf**:
+- `https://openlibrary.org/people/jane/books/want-to-read`, or the short form
+  `jane:want-to-read`
+- Supported shelves: `want-to-read`, `currently-reading`, `already-read`
+
+**Note**: Seerr identifies books by their Open Library ID, so these lists need no title
+matching at all - every entry names exactly the book to request.
+</details>
+
+### 📚 Book Lists
+
+Books are not a universal Seerr feature. Requesting them needs a build that supports books -
+[SeerrNG](https://github.com/KaHooli/seerrng) - with a Chaptarr/Readarr-compatible **Bookshelf**
+service configured under *Settings → Services*. ListSync asks the connected server what it can
+request and only offers the book providers when the answer is yes; if your server has no book
+support, Goodreads and Open Library never appear in the *Add List* dialog.
+
+Because ListSync makes the request, a book list can be assigned to a Seerr user like any other
+list, and the request is attributed to that person - which is what Chaptarr's own import lists
+cannot do.
+
+Each book list also chooses a **format**, since Seerr tracks the ebook and the audiobook copy of
+a book separately:
+
+| Format | Requests |
+| --- | --- |
+| `ebook` | The ebook only (the default) |
+| `audiobook` | The audiobook only |
+| `both` | One of each, in a single request |
+
+Only formats your server has a *default* Bookshelf server for are offered - a setup with only an
+audiobook service can't be asked for ebooks. Everything else about the request (root folder,
+quality profile, metadata profile, tags) comes from that default service in Seerr, exactly as it
+would for a request made in the Seerr UI.
+
+```bash
+# Books, requested as the Seerr user who owns each shelf
+GOODREADS_LISTS=19281606:to-read|audiobook::7,42:read::3
+OPENLIBRARY_LISTS=jane/OL123L::7
+
+# Format used by any book list whose entry doesn't name one
+BOOK_FORMAT=ebook
+```
+
+An entry is `<list>|<format>::<seerr user id>`; both the format and the user are optional.
+
 
 ## 🍿 Configuration
 

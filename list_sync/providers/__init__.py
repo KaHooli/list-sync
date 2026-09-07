@@ -5,6 +5,11 @@ List provider registration and management.
 import logging
 from typing import Dict, Callable, List, Any
 
+# Re-exported so callers can ask "is this list type books?" without importing
+# the provider modules themselves. Book list types are only usable against a
+# Seerr build that can request books - see SeerrClient.supports_books().
+from ..books import BOOK_PROVIDERS, is_book_provider  # noqa: F401
+
 
 class SyncCancelledException(Exception):
     """Exception raised when sync cancellation is requested."""
@@ -41,6 +46,7 @@ def check_and_raise_if_cancelled():
 
 # Registry to store provider functions by type
 PROVIDERS = {}
+
 
 
 def register_provider(provider_type: str):
@@ -108,6 +114,8 @@ def _import_all_providers():
         from . import tvdb
         from . import anilist
         from . import collections
+        from . import goodreads
+        from . import openlibrary
     except ImportError as e:
         import logging
         logging.warning(f"Could not import all providers: {e}")
