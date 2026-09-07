@@ -661,7 +661,10 @@ watch(() => props.modelValue, async (newValue, oldValue) => {
     try {
       const [config, capabilities] = await Promise.all([
         api.getConfig(),
-        api.getCapabilities().catch(() => null),
+        api.getCapabilities().catch((err: any) => {
+          console.error('Could not read Seerr capabilities:', err)
+          return null
+        }),
         usersStore.fetchUsers()
       ])
 
