@@ -46,12 +46,28 @@ def make_post(response):
 
 client = SeerrClient("https://seerr.example.com/", "KEY", "1")
 
-# The requester must travel as X-Api-User, not as the client default.
+# The requester travels both ways: as X-Api-User, and as userId in the body.
+# SeerrNG never reads the header - an API key authenticates as the owner
+# account - so the body field is the only thing that attributes a request to
+# the user a list is assigned to.
 requests.post = make_post(FakeResponse(201, {"id": 5}))
 check("success", client.request_media(603, "movie", requester_user_id="7"), "success")
 check("X-Api-User header sent", captured["headers"].get("X-Api-User"), "7")
 check("url has no double slash", captured["url"], "https://seerr.example.com/api/v1/request")
-check("payload", captured["json"], {"mediaId": 603, "mediaType": "movie", "is4k": False})
+check("payload names the requester", captured["json"],
+      {"mediaId": 603, "mediaType": "movie", "is4k": False, "userId": 7})
+
+# The default requester is named too, so nothing relies on the header alone.
+requests.post = make_post(FakeResponse(201, {"id": 5}))
+client.request_media(603, "movie")
+check("default requester named", captured["json"].get("userId"), 1)
+
+# Seerr wants a number there, so a non-numeric user is left out rather than
+# sent as something the server would reject outright.
+requests.post = make_post(FakeResponse(201, {"id": 5}))
+client.request_media(603, "movie", requester_user_id="not-a-number")
+check("non-numeric user omitted", "userId" in captured["json"], False)
+check("non-numeric user still in the header", captured["headers"].get("X-Api-User"), "not-a-number")
 
 # 409 is Seerr's real duplicate response - the old code called this an error.
 requests.post = make_post(FakeResponse(409, {"message": "Request for this media already exists."}))
@@ -91,6 +107,29 @@ check("tv seasons payload", captured["json"]["seasons"], [1, 2, 3])
 check("tv user header", captured["headers"].get("X-Api-User"), "4")
 check("specific season", client.request_specific_season(1399, 2, requester_user_id="4"), "success")
 check("season payload", captured["json"]["seasons"], [2])
+check("tv payload names the requester", captured["json"].get("userId"), 4)
+
+# A key that may not request for other people used to work through the header
+# alone, so naming a requester must not turn that into a wall of failures: the
+# request is retried without the name rather than lost.
+attempts = []
+def refuse_then_accept(url, headers=None, json=None, timeout=None):
+    attempts.append(json)
+    if "userId" in (json or {}):
+        return FakeResponse(403, {"message": "You do not have permission to modify the request user."})
+    return FakeResponse(201, {"id": 9})
+
+requests.post = refuse_then_accept
+check("falls back when naming a requester is refused",
+      client.request_media(603, "movie", requester_user_id="7"), "success")
+check("retried without the name", "userId" in attempts[-1], False)
+check("tried with it first", attempts[0].get("userId"), 7)
+
+# Any other 403 is a real refusal and must not be retried behind the scenes.
+attempts.clear()
+requests.post = make_post(FakeResponse(403, {"message": "You do not have permission to make requests."}))
+check("unrelated 403 is still an error",
+      client.request_media(603, "movie", requester_user_id="7"), "error")
 
 # --- validate_requester ---
 USERS = {"results": [
