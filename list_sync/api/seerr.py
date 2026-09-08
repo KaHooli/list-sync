@@ -81,11 +81,20 @@ class SeerrClient:
         user_id = str(requester_user_id or self.requester_user_id or "1")
         request_url = f"{self.seerr_url}/api/v1/request"
 
+        # Name the requester in the body as well as the X-Api-User header.
+        # SeerrNG never reads that header - an API key authenticates as the
+        # owner account and nothing else - so the header alone silently
+        # attributed every list's requests to the admin. The body field is what
+        # both it and Overseerr honour.
+        body = dict(payload)
+        if user_id.isdigit():
+            body["userId"] = int(user_id)
+
         try:
             response = requests.post(
                 request_url,
                 headers=self._headers_for_user(user_id),
-                json=payload,
+                json=body,
                 timeout=30
             )
             response.raise_for_status()
@@ -95,6 +104,19 @@ class SeerrClient:
         except requests.exceptions.HTTPError as e:
             status_code = e.response.status_code
             server_message = self._extract_error_message(e.response)
+
+            # Naming another requester needs Manage Users or Manage Requests.
+            # A key without it could request perfectly well before this, so
+            # fall back rather than turning a working sync into a wall of 403s.
+            if (status_code == 403 and "userId" in body
+                    and "permission to modify the request user" in server_message.lower()):
+                logging.warning(
+                    f"⚠️  {description}: this API key may not request on behalf of other users, "
+                    f"so the request was made without naming user {user_id}. Seerr will attribute "
+                    f"it to the key's own account. Grant that account Manage Requests in Seerr "
+                    f"to keep per-list users working."
+                )
+                return self._submit_request_without_requester(payload, description, user_id)
 
             # 409 is Seerr's canonical "already requested" answer.
             if status_code == 409:
@@ -136,6 +158,40 @@ class SeerrClient:
             logging.error(f"❌ {description}: HTTP {status_code} as user {user_id} - {server_message}")
             return "error"
 
+        except requests.exceptions.RequestException as e:
+            logging.error(f"❌ {description}: could not reach Seerr - {str(e)}")
+            return "error"
+
+    def _submit_request_without_requester(self, payload: Dict[str, Any], description: str,
+                                          user_id: str) -> str:
+        """
+        Re-send a request without naming the requester, after Seerr refused it.
+
+        Args:
+            payload (Dict[str, Any]): The original body, with no userId in it
+            description (str): Human-readable description used in log lines
+            user_id (str): The user the request was meant for, for the headers
+
+        Returns:
+            str: "success", "already_requested", or "error"
+        """
+        try:
+            response = requests.post(
+                f"{self.seerr_url}/api/v1/request",
+                headers=self._headers_for_user(user_id),
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            return "success"
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 409:
+                return "already_requested"
+            logging.error(
+                f"❌ {description}: HTTP {e.response.status_code} without a named requester - "
+                f"{self._extract_error_message(e.response)}"
+            )
+            return "error"
         except requests.exceptions.RequestException as e:
             logging.error(f"❌ {description}: could not reach Seerr - {str(e)}")
             return "error"

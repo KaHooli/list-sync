@@ -271,6 +271,9 @@ check("request succeeds", status, "success")
 check("request payload", posted["json"], {
     "mediaType": "book", "mediaId": "OL27448W", "format": "both",
     "editionId": "OL8934157M", "authorId": "OL79034A", "isbn13": "9780441478125",
+    # The shelf's user, named in the body: SeerrNG ignores X-Api-User, so this
+    # is what attributes the book to them rather than to the admin.
+    "userId": 7,
 })
 check("requests as the list's user", posted["headers"]["X-Api-User"], "7")
 
@@ -283,7 +286,7 @@ check("duplicate is not an error", client.request_book("OL27448W"), "already_req
 rq.post = capture_post
 client.request_book("OL27448W")
 check("optional ids omitted", posted["json"],
-      {"mediaType": "book", "mediaId": "OL27448W", "format": "ebook"})
+      {"mediaType": "book", "mediaId": "OL27448W", "format": "ebook", "userId": 1})
 check("empty id refused", client.request_book(""), "error")
 
 # --- per (user, format) fan-out --------------------------------------------
