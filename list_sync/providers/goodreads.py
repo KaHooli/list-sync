@@ -23,10 +23,13 @@ DEFAULT_SHELF = "to-read"
 PER_PAGE = 100
 MAX_PAGES = 100
 
-# Goodreads appends the series to the title ("Dune (Dune, #1)"). Seerr matches
-# against Open Library, where the series is not part of the title, so the
-# suffix has to come off before the book can be found.
-SERIES_SUFFIX = re.compile(r"\s*\((?:[^()]*,\s*)?#[\d.\-]+\)\s*$")
+# Goodreads appends the series to the title, and writes it more than one way:
+# "Dune (Dune, #1)", "Children of Dune (Dune #3)", and occasionally two series
+# at once, "One Second (Seven, #7; Mageriverse #14)". Seerr matches against
+# Open Library, where none of that is part of the title, so any trailing
+# bracket carrying a "#<number>" comes off. A bracket without one - "(Illustrated)",
+# "(Unabridged)" - is left alone, since that may be the real title.
+SERIES_SUFFIX = re.compile(r"\s*\([^()]*#[\d.\-]+[^()]*\)\s*$")
 
 
 def parse_goodreads_list_id(list_id: str) -> Tuple[str, str]:

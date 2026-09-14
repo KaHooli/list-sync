@@ -489,6 +489,10 @@ a book separately:
 | `audiobook` | The audiobook only |
 | `both` | One of each, in a single request |
 
+Seerr rate-limits book lookups to 30 a minute, so a large shelf syncs at roughly that pace -
+a few hundred books take several minutes. ListSync waits the limiter out rather than giving up;
+a book it could not ask about is recorded as an error, not as missing, so the next sync retries it.
+
 Only formats your server has a *default* Bookshelf server for are offered - a setup with only an
 audiobook service can't be asked for ebooks. Everything else about the request (root folder,
 quality profile, metadata profile, tags) comes from that default service in Seerr, exactly as it
