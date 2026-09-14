@@ -18,6 +18,8 @@ for n in ("seleniumbase", "bs4", "halo", "discord_webhook"):
 c = stub("cryptography"); f = stub("cryptography.fernet", ("Fernet", "InvalidToken")); c.fernet = f
 d = stub("dotenv"); d.load_dotenv = lambda *a, **k: None; d.set_key = lambda *a, **k: None
 
+import time
+
 import requests as rq
 
 from list_sync.api.seerr import SeerrClient
@@ -98,6 +100,20 @@ check("series suffix stripped", clean_book_title("Dune (Dune, #1)"), "Dune")
 check("range suffix stripped", clean_book_title("Book (Series, #1-3)"), "Book")
 check("plain title kept", clean_book_title("1984"), "1984")
 check("unrelated parens kept", clean_book_title("Book (Illustrated)"), "Book (Illustrated)")
+# Goodreads writes the series without a comma at least as often as with one,
+# and sometimes names two at once. Every one of these reached Open Library
+# with the series still attached, and none of them matched.
+check("comma-less series stripped",
+      clean_book_title("Children of Dune (Dune #3)"), "Children of Dune")
+check("colon title with series", clean_book_title("Chapterhouse: Dune (Dune #6)"),
+      "Chapterhouse: Dune")
+check("article in series name",
+      clean_book_title("Shadow of the Giant (The Shadow #4)"), "Shadow of the Giant")
+check("two series at once",
+      clean_book_title("One Second (Seven, #7; Mageriverse #14)"), "One Second")
+check("hash outside brackets is the title",
+      clean_book_title("The Walking Dead #72"), "The Walking Dead #72")
+check("suffix-only title kept", clean_book_title("(#5)"), "(#5)")
 check("year parsed", _parse_year("1965"), 1965)
 check("year from date", _parse_year("1965-06-01"), 1965)
 check("junk year ignored", _parse_year("unknown"), None)
@@ -255,6 +271,84 @@ rq.get = isbn_search
 match = client.search_book("Dune (Dune, #1)", author="Frank Herbert", isbn="0-441-47812-3")
 check("isbn match", match["id"], "OL27448W")
 check("isbn query is a field query", seen_queries[0], "isbn:0441478123")
+
+# --- rate limiting ---------------------------------------------------------
+# Seerr allows 30 book lookups a minute; a shelf of 700 meets that every time.
+# Reporting those books as missing is the one answer that must never happen.
+from list_sync.api.seerr import BookLookupUnavailable
+
+slept = []
+_real_sleep = time.sleep
+time.sleep = lambda seconds: slept.append(seconds)
+
+
+SEARCH_HIT = {"results": [{"id": "OL27448W", "title": "Dune"}]}
+BOOK_HIT = {"id": "OL27448W", "title": "Dune", "mediaType": "book"}
+
+
+class Throttled:
+    """Answers 429 a set number of times, then succeeds."""
+    def __init__(self, refusals, headers=None, body=None):
+        self.remaining = refusals
+        self.headers = headers or {}
+        self.body = SEARCH_HIT if body is None else body
+        self.calls = 0
+
+    def __call__(self, url, **kwargs):
+        self.calls += 1
+        if self.remaining > 0:
+            self.remaining -= 1
+            r = Response(None, status_code=429)
+            r.headers = self.headers
+            return r
+        return Response(self.body)
+
+
+rq.get = Throttled(2, {"Retry-After": "7"})
+slept.clear()
+match = client.search_book("Dune")
+check("rate limit waited out, not reported as missing", (match or {}).get("id"), "OL27448W")
+check("retried until it answered", rq.get.calls, 3)
+check("waited what the server asked", slept, [7, 7])
+
+# A wait the server asks for is honoured, but not without bound.
+rq.get = Throttled(1, {"Retry-After": "99999"})
+slept.clear()
+client.search_book("Dune")
+check("absurd Retry-After capped", slept, [90])
+
+# No header at all still waits rather than hammering.
+rq.get = Throttled(1, {})
+slept.clear()
+client.search_book("Dune")
+check("no header falls back to a sane wait", slept, [20])
+
+# Never answering is an error, not a verdict about the book.
+rq.get = Throttled(99, {"Retry-After": "1"})
+try:
+    client.search_book("Dune")
+    check("persistent rate limit raises", False, True)
+except BookLookupUnavailable as e:
+    check("persistent rate limit raises", True, True)
+    check("and says the book was not checked", "not checked" in str(e), True)
+
+# The same applies to a direct Open Library ID lookup, which shares the budget.
+rq.get = Throttled(2, {"Retry-After": "3"}, body=BOOK_HIT)
+slept.clear()
+book = client.get_book("OL27448W")
+check("direct lookup waits too", (book or {}).get("id"), "OL27448W")
+
+def unreachable_get(*a, **k):
+    raise rq.exceptions.ConnectionError("no route to host")
+
+rq.get = unreachable_get
+try:
+    client.search_book("Dune")
+    check("unreachable raises", False, True)
+except BookLookupUnavailable:
+    check("unreachable raises", True, True)
+
+time.sleep = _real_sleep
 
 # --- request payloads ------------------------------------------------------
 posted = {}
@@ -490,6 +584,20 @@ seerr = FakeSeerr(book_id="OL10002W")
 main.process_media_item(same_format, seerr, dry_run=False)
 check("overlapping format requested once", seerr.requested,
       [("OL10002W", "ebook", "3")])
+
+# A book Seerr could not be asked about is an error, never "not found":
+# "not found" reads as a settled verdict, and a wall of them is what a rate
+# limited sync looked like - 643 books declared missing that were all present.
+class Throttling(FakeSeerr):
+    def search_book(self, *a, **k):
+        raise BookLookupUnavailable("Seerr is still rate limiting book lookups")
+
+
+seerr = Throttling(book_id="OL10004W")
+result = main.process_media_item(items[0], seerr, dry_run=False)
+check("a throttled book is an error, not a missing one", result["status"], "error")
+check("the reason survives", "rate limiting" in (result.get("error_message") or ""), True)
+check("and nothing was requested", seerr.requested, [])
 
 # Without book support the item errors out rather than being requested.
 seerr = FakeSeerr(book_id="OL10003W", supported=False, ebook=False, audiobook=False,

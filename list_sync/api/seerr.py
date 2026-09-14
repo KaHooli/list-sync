@@ -5,6 +5,8 @@ Seerr API client for the ListSync application.
 import json
 import logging
 import re
+import time
+
 import requests
 from typing import Dict, Any, Tuple, Optional
 from urllib.parse import quote
@@ -26,6 +28,26 @@ PERMISSION_ADMIN = 2
 PERMISSION_REQUEST = 32
 PERMISSION_REQUEST_MOVIE = 262144
 PERMISSION_REQUEST_TV = 524288
+
+# SeerrNG rate-limits its whole /book/* router to 30 requests a minute per
+# user (server/routes/book.ts). A sync walks hundreds of books, so meeting that
+# limit is ordinary rather than exceptional - the only wrong answer is to treat
+# it as "this book does not exist", which is what reporting the book missing
+# would do. Wait the limiter out instead, the way the movie search already does.
+BOOK_RATE_LIMIT_ATTEMPTS = 4
+BOOK_RATE_LIMIT_MAX_WAIT = 90
+BOOK_RATE_LIMIT_DEFAULT_WAIT = 20
+
+
+class BookLookupUnavailable(Exception):
+    """
+    Seerr could not answer a book lookup - rate limited, or unreachable.
+
+    Raised rather than returned so the sync records the book as an error. The
+    distinction matters: "not found" reads as a settled verdict about the book
+    and is what a wall of rate-limited lookups looked like, while an error says
+    the question never got asked and the next sync should ask again.
+    """
 
 
 class SeerrClient:
@@ -938,6 +960,72 @@ class SeerrClient:
             ),
         }
 
+    @staticmethod
+    def _retry_after_seconds(response) -> int:
+        """
+        How long Seerr's rate limiter wants us to wait.
+
+        express-rate-limit sends standard headers, so prefer what the server
+        asked for over a guess, but keep it inside sane bounds either way.
+        """
+        for header in ("Retry-After", "RateLimit-Reset"):
+            raw = response.headers.get(header)
+            if not raw:
+                continue
+            try:
+                seconds = int(float(str(raw).strip()))
+            except (TypeError, ValueError):
+                continue
+            if seconds >= 0:
+                return min(max(seconds, 1), BOOK_RATE_LIMIT_MAX_WAIT)
+        return BOOK_RATE_LIMIT_DEFAULT_WAIT
+
+    def _book_api_get(self, path: str, params: Optional[Dict[str, Any]] = None,
+                      timeout: int = 30):
+        """
+        GET a /book endpoint, waiting out the rate limiter rather than failing.
+
+        Args:
+            path (str): Path below /api/v1/book, starting with "/"
+            params (Optional[Dict[str, Any]]): Query parameters
+            timeout (int): Per-attempt timeout in seconds
+
+        Returns:
+            The response. Callers interpret the status code themselves.
+
+        Raises:
+            BookLookupUnavailable: If Seerr could not be reached, or stayed
+                rate limited across every attempt.
+        """
+        url = f"{self.seerr_url}/api/v1/book{path}"
+
+        for attempt in range(1, BOOK_RATE_LIMIT_ATTEMPTS + 1):
+            try:
+                response = requests.get(url, headers=self.headers, params=params, timeout=timeout)
+            except requests.exceptions.RequestException as e:
+                raise BookLookupUnavailable(
+                    f"could not reach Seerr for /book{path} - {e}"
+                ) from e
+
+            if response.status_code != 429:
+                return response
+
+            if attempt == BOOK_RATE_LIMIT_ATTEMPTS:
+                break
+
+            wait = self._retry_after_seconds(response)
+            logging.info(
+                f"⏳ Seerr is rate limiting book lookups (30/min); waiting {wait}s "
+                f"before retrying /book{path} [attempt {attempt}/{BOOK_RATE_LIMIT_ATTEMPTS}]"
+            )
+            time.sleep(wait)
+
+        raise BookLookupUnavailable(
+            f"Seerr is still rate limiting book lookups after "
+            f"{BOOK_RATE_LIMIT_ATTEMPTS} attempts on /book{path}. The book was not "
+            f"checked, so it is left for the next sync rather than recorded as missing."
+        )
+
     def get_book(self, book_id: str) -> Optional[Dict[str, Any]]:
         """
         Look a book up directly by its Open Library work ID.
@@ -947,24 +1035,31 @@ class SeerrClient:
 
         Returns:
             Optional[Dict[str, Any]]: Book details, or None if not found
+
+        Raises:
+            BookLookupUnavailable: If Seerr could not be asked at all
         """
         book_id = str(book_id or "").strip()
         if not book_id:
             return None
 
-        book_url = f"{self.seerr_url}/api/v1/book/{quote(book_id, safe='')}"
+        logging.info(f"📚 Seerr API: Direct lookup by Open Library ID: {book_id}")
+        response = self._book_api_get(f"/{quote(book_id, safe='')}", timeout=20)
+
+        if response.status_code == 404:
+            logging.info(f"❌ Seerr API: Open Library ID {book_id} not found")
+            return None
+
+        if response.status_code >= 400:
+            logging.error(
+                f"❌ Seerr API: HTTP {response.status_code} for Open Library ID {book_id}"
+            )
+            return None
+
         try:
-            logging.info(f"📚 Seerr API: Direct lookup by Open Library ID: {book_id}")
-            response = requests.get(book_url, headers=self.headers, timeout=20)
-
-            if response.status_code == 404:
-                logging.info(f"❌ Seerr API: Open Library ID {book_id} not found")
-                return None
-
-            response.raise_for_status()
             return self._as_book_result(response.json())
-        except requests.exceptions.RequestException as e:
-            logging.error(f"❌ Seerr API error for Open Library ID {book_id}: {str(e)}")
+        except ValueError as e:
+            logging.error(f"❌ Seerr API: unreadable answer for Open Library ID {book_id} - {e}")
             return None
 
     @staticmethod
@@ -1068,29 +1163,28 @@ class SeerrClient:
 
     def _book_search_request(self, query: str) -> list:
         """Run one book search and return its raw results."""
-        search_url = f"{self.seerr_url}/api/v1/book/search"
-        try:
-            logging.info(f"🔍 Seerr API: Book search for '{query}'")
-            response = requests.get(
-                search_url,
-                headers=self.headers,
-                params={"query": query, "page": 1},
-                timeout=30
+        logging.info(f"🔍 Seerr API: Book search for '{query}'")
+        response = self._book_api_get("/search", params={"query": query, "page": 1})
+
+        if response.status_code == 404:
+            logging.error(
+                "❌ Seerr API: /book/search is not available on this server. "
+                "Book lists need a Seerr build with book support (SeerrNG)."
             )
-
-            if response.status_code == 404:
-                logging.error(
-                    "❌ Seerr API: /book/search is not available on this server. "
-                    "Book lists need a Seerr build with book support (SeerrNG)."
-                )
-                return []
-
-            response.raise_for_status()
-            results = response.json().get("results") or []
-            return results if isinstance(results, list) else []
-        except requests.exceptions.RequestException as e:
-            logging.error(f'❌ Seerr API: Book search failed for "{query}": {str(e)}')
             return []
+
+        if response.status_code >= 400:
+            logging.error(
+                f'❌ Seerr API: Book search for "{query}" returned HTTP {response.status_code}'
+            )
+            return []
+
+        try:
+            results = response.json().get("results") or []
+        except ValueError as e:
+            logging.error(f'❌ Seerr API: unreadable book search answer for "{query}" - {e}')
+            return []
+        return results if isinstance(results, list) else []
 
     @staticmethod
     def _extract_book_requesters(media_info: Dict[str, Any], book_format: str) -> set:
